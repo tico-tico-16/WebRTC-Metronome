@@ -8,6 +8,7 @@ const bpmInput = document.querySelector<HTMLInputElement>("#bpmInput")!;
 const meterSelect = document.querySelector<HTMLSelectElement>("#meterSelect")!;
 const startButton = document.querySelector<HTMLButtonElement>("#startButton")!;
 const stopButton = document.querySelector<HTMLButtonElement>("#stopButton")!;
+const outputOffsetInput = document.querySelector<HTMLInputElement>("#outputOffsetInput")!;
 const connectionStatus = document.querySelector<HTMLElement>("#connectionStatus")!;
 const participantUrl = document.querySelector<HTMLElement>("#participantUrl")!;
 const participantCount = document.querySelector<HTMLElement>("#participantCount")!;
@@ -17,6 +18,10 @@ let isPlaying = false;
 let startHostTime: number | null = null;
 let latestSentHostTime = nowSeconds();
 const scheduler = new HostMetronomeScheduler();
+
+function readOutputOffsetMs(): number {
+  return Math.max(-200, Math.min(200, Number(outputOffsetInput.value) || 0));
+}
 
 function readConfig(): MetronomeConfig {
   return {
@@ -96,6 +101,7 @@ webRTC.onChange(renderParticipants);
 
 startButton.addEventListener("click", () => {
   const config = readConfig();
+  scheduler.setOutputOffsetMs(readOutputOffsetMs());
   startHostTime = nowSeconds() + 2;
   latestSentHostTime = nowSeconds();
   setPlaying(true);
@@ -120,6 +126,9 @@ function broadcastConfigWhenStopped(): void {
 
 bpmInput.addEventListener("change", broadcastConfigWhenStopped);
 meterSelect.addEventListener("change", broadcastConfigWhenStopped);
+outputOffsetInput.addEventListener("input", () => {
+  scheduler.setOutputOffsetMs(readOutputOffsetMs());
+});
 
 setInterval(() => {
   if (!isPlaying) return;

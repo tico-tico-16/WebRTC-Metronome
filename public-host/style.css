@@ -108,6 +108,10 @@ h2 {
   align-content: start;
 }
 
+.wide {
+  grid-column: 1 / -1;
+}
+
 label {
   display: grid;
   gap: 8px;

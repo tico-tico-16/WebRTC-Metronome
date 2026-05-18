@@ -27,6 +27,7 @@ export class MetronomeScheduler {
   private startHostTime: number | null = null;
   private hostToLocalTime: (hostTime: number) => number = (hostTime) => hostTime;
   private audioEnabled = false;
+  private outputOffsetSeconds = 0;
 
   async enableAudio(): Promise<void> {
     this.context ??= new AudioContext();
@@ -50,6 +51,10 @@ export class MetronomeScheduler {
     this.scheduleAhead();
   }
 
+  setOutputOffsetMs(offsetMs: number): void {
+    this.outputOffsetSeconds = offsetMs / 1000;
+  }
+
   stop(): void {
     this.startHostTime = null;
     this.stopTimer();
@@ -66,7 +71,7 @@ export class MetronomeScheduler {
     while (true) {
       const beatHostTime = this.startHostTime + this.nextBeatIndex * beatLength;
       const beatLocalTime = this.hostToLocalTime(beatHostTime);
-      const audioTime = audioNow + (beatLocalTime - localNow);
+      const audioTime = audioNow + (beatLocalTime - localNow) + this.outputOffsetSeconds;
 
       if (audioTime > audioNow + lookAhead) break;
       if (audioTime >= audioNow - 0.02) {

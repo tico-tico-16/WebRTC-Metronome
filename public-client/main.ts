@@ -14,11 +14,16 @@ const beatValue = document.querySelector<HTMLElement>("#beatValue")!;
 const rttValue = document.querySelector<HTMLElement>("#rttValue")!;
 const offsetValue = document.querySelector<HTMLElement>("#offsetValue")!;
 const jitterValue = document.querySelector<HTMLElement>("#jitterValue")!;
+const outputOffsetInput = document.querySelector<HTMLInputElement>("#outputOffsetInput")!;
 
 const signaling = new SignalingClient();
 const webRTC = new ClientWebRTC((message) => signaling.send(message));
 const clockSync = new ClockSync((message) => webRTC.sendSync(message));
 const scheduler = new MetronomeScheduler();
+
+function readOutputOffsetMs(): number {
+  return Math.max(-200, Math.min(200, Number(outputOffsetInput.value) || 0));
+}
 
 let config: MetronomeConfig = { bpm: 120, beatsPerBar: 4, beatUnit: 4 };
 let isPlaying = false;
@@ -70,6 +75,7 @@ function startWhenStable(): void {
 
   pendingStart = false;
   const hostNow = clockSync.hostNow();
+  scheduler.setOutputOffsetMs(readOutputOffsetMs());
   scheduler.start(config, startHostTime, hostNow, (hostTime) => clockSync.localTimeForHostTime(hostTime));
 }
 
@@ -161,6 +167,10 @@ audioButton.addEventListener("click", () => {
     startWhenStable();
     render();
   });
+});
+
+outputOffsetInput.addEventListener("input", () => {
+  scheduler.setOutputOffsetMs(readOutputOffsetMs());
 });
 
 setInterval(render, 100);

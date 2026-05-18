@@ -33,6 +33,7 @@ export class HostMetronomeScheduler {
   private nextBeatIndex = 0;
   private config: MetronomeConfig = { bpm: 120, beatsPerBar: 4, beatUnit: 4 };
   private startHostTime: number | null = null;
+  private outputOffsetSeconds = 0;
 
   async enableAudio(): Promise<void> {
     this.context ??= new AudioContext();
@@ -49,6 +50,10 @@ export class HostMetronomeScheduler {
     this.scheduleAhead();
   }
 
+  setOutputOffsetMs(offsetMs: number): void {
+    this.outputOffsetSeconds = offsetMs / 1000;
+  }
+
   stop(): void {
     this.startHostTime = null;
     this.stopTimer();
@@ -63,7 +68,7 @@ export class HostMetronomeScheduler {
 
     while (true) {
       const beatHostTime = this.startHostTime + this.nextBeatIndex * beatLength;
-      const audioTime = audioNow + (beatHostTime - hostNow);
+      const audioTime = audioNow + (beatHostTime - hostNow) + this.outputOffsetSeconds;
       if (audioTime > audioNow + 0.18) break;
       if (audioTime >= audioNow - 0.02) {
         this.click(audioTime, this.nextBeatIndex % this.config.beatsPerBar === 0);
