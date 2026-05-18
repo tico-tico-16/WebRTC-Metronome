@@ -9,6 +9,8 @@ const meterSelect = document.querySelector<HTMLSelectElement>("#meterSelect")!;
 const startButton = document.querySelector<HTMLButtonElement>("#startButton")!;
 const stopButton = document.querySelector<HTMLButtonElement>("#stopButton")!;
 const outputOffsetInput = document.querySelector<HTMLInputElement>("#outputOffsetInput")!;
+const autoLatencyInput = document.querySelector<HTMLInputElement>("#autoLatencyInput")!;
+const localLatencyValue = document.querySelector<HTMLElement>("#localLatencyValue")!;
 const connectionStatus = document.querySelector<HTMLElement>("#connectionStatus")!;
 const participantCount = document.querySelector<HTMLElement>("#participantCount")!;
 const participantList = document.querySelector<HTMLUListElement>("#participantList")!;
@@ -20,6 +22,12 @@ const scheduler = new HostMetronomeScheduler();
 
 function readOutputOffsetMs(): number {
   return Math.max(-200, Math.min(200, Number(outputOffsetInput.value) || 0));
+}
+
+function syncLocalLatencyControls(): void {
+  scheduler.setAutomaticLatencyCompensationEnabled(autoLatencyInput.checked);
+  const latencyMs = scheduler.getEstimatedOutputLatencyMs();
+  localLatencyValue.textContent = latencyMs === null ? "--" : `${latencyMs.toFixed(1)}ms`;
 }
 
 function readConfig(): MetronomeConfig {
@@ -99,11 +107,12 @@ webRTC.onChange(renderParticipants);
 startButton.addEventListener("click", () => {
   const config = readConfig();
   scheduler.setOutputOffsetMs(readOutputOffsetMs());
+  scheduler.setAutomaticLatencyCompensationEnabled(autoLatencyInput.checked);
   startHostTime = nowSeconds() + 2;
   latestSentHostTime = nowSeconds();
   setPlaying(true);
   connectionStatus.textContent = "Starting in 2 seconds";
-  void scheduler.start(config, startHostTime, latestSentHostTime);
+  void scheduler.start(config, startHostTime, latestSentHostTime).then(syncLocalLatencyControls);
   webRTC.broadcastControl({ type: "start", ...config, startHostTime, sentHostTime: latestSentHostTime });
 });
 
@@ -126,6 +135,7 @@ meterSelect.addEventListener("change", broadcastConfigWhenStopped);
 outputOffsetInput.addEventListener("input", () => {
   scheduler.setOutputOffsetMs(readOutputOffsetMs());
 });
+autoLatencyInput.addEventListener("change", syncLocalLatencyControls);
 
 setInterval(() => {
   if (!isPlaying) return;
@@ -134,4 +144,5 @@ setInterval(() => {
 }, 100);
 
 setPlaying(false);
+syncLocalLatencyControls();
 signaling.connect();

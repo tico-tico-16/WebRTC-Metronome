@@ -15,6 +15,8 @@ const rttValue = document.querySelector<HTMLElement>("#rttValue")!;
 const offsetValue = document.querySelector<HTMLElement>("#offsetValue")!;
 const jitterValue = document.querySelector<HTMLElement>("#jitterValue")!;
 const outputOffsetInput = document.querySelector<HTMLInputElement>("#outputOffsetInput")!;
+const autoLatencyInput = document.querySelector<HTMLInputElement>("#autoLatencyInput")!;
+const localLatencyValue = document.querySelector<HTMLElement>("#localLatencyValue")!;
 
 const signaling = new SignalingClient();
 const webRTC = new ClientWebRTC((message) => signaling.send(message));
@@ -23,6 +25,12 @@ const scheduler = new MetronomeScheduler();
 
 function readOutputOffsetMs(): number {
   return Math.max(-200, Math.min(200, Number(outputOffsetInput.value) || 0));
+}
+
+function syncLocalLatencyControls(): void {
+  scheduler.setAutomaticLatencyCompensationEnabled(autoLatencyInput.checked);
+  const latencyMs = scheduler.getEstimatedOutputLatencyMs();
+  localLatencyValue.textContent = latencyMs === null ? "--" : `${latencyMs.toFixed(1)}ms`;
 }
 
 let config: MetronomeConfig = { bpm: 120, beatsPerBar: 4, beatUnit: 4 };
@@ -76,6 +84,7 @@ function startWhenStable(): void {
   pendingStart = false;
   const hostNow = clockSync.hostNow();
   scheduler.setOutputOffsetMs(readOutputOffsetMs());
+  scheduler.setAutomaticLatencyCompensationEnabled(autoLatencyInput.checked);
   scheduler.start(config, startHostTime, hostNow, (hostTime) => clockSync.localTimeForHostTime(hostTime));
 }
 
@@ -164,6 +173,7 @@ joinButton.addEventListener("click", () => {
 audioButton.addEventListener("click", () => {
   void scheduler.enableAudio().then(() => {
     audioButton.disabled = true;
+    syncLocalLatencyControls();
     startWhenStable();
     render();
   });
@@ -172,6 +182,8 @@ audioButton.addEventListener("click", () => {
 outputOffsetInput.addEventListener("input", () => {
   scheduler.setOutputOffsetMs(readOutputOffsetMs());
 });
+autoLatencyInput.addEventListener("change", syncLocalLatencyControls);
 
 setInterval(render, 100);
+syncLocalLatencyControls();
 render();

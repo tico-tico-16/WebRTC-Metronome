@@ -34,6 +34,7 @@ export class HostMetronomeScheduler {
   private config: MetronomeConfig = { bpm: 120, beatsPerBar: 4, beatUnit: 4 };
   private startHostTime: number | null = null;
   private outputOffsetSeconds = 0;
+  private automaticLatencyCompensationEnabled = true;
 
   async enableAudio(): Promise<void> {
     this.context ??= new AudioContext();
@@ -54,6 +55,24 @@ export class HostMetronomeScheduler {
     this.outputOffsetSeconds = offsetMs / 1000;
   }
 
+  setAutomaticLatencyCompensationEnabled(enabled: boolean): void {
+    this.automaticLatencyCompensationEnabled = enabled;
+  }
+
+  getEstimatedOutputLatencyMs(): number | null {
+    if (!this.context) return null;
+
+    const contextWithOutputLatency = this.context as AudioContext & { outputLatency?: number };
+    const baseLatency = Number.isFinite(this.context.baseLatency) ? this.context.baseLatency : 0;
+    const outputLatency =
+      typeof contextWithOutputLatency.outputLatency === "number" && Number.isFinite(contextWithOutputLatency.outputLatency)
+        ? contextWithOutputLatency.outputLatency
+        : 0;
+    const totalLatency = baseLatency + outputLatency;
+
+    return totalLatency > 0 ? totalLatency * 1000 : null;
+  }
+
   stop(): void {
     this.startHostTime = null;
     this.stopTimer();
@@ -68,7 +87,7 @@ export class HostMetronomeScheduler {
 
     while (true) {
       const beatHostTime = this.startHostTime + this.nextBeatIndex * beatLength;
-      const audioTime = audioNow + (beatHostTime - hostNow) + this.outputOffsetSeconds;
+      const audioTime = audioNow + (beatHostTime - hostNow) + this.outputOffsetSeconds - this.automaticLatencySeconds();
       if (audioTime > audioNow + 0.18) break;
       if (audioTime >= audioNow - 0.02) {
         this.click(audioTime, this.nextBeatIndex % this.config.beatsPerBar === 0);
@@ -90,6 +109,11 @@ export class HostMetronomeScheduler {
     oscillator.connect(gain).connect(this.context.destination);
     oscillator.start(time);
     oscillator.stop(time + 0.08);
+  }
+
+  private automaticLatencySeconds(): number {
+    if (!this.automaticLatencyCompensationEnabled) return 0;
+    return (this.getEstimatedOutputLatencyMs() ?? 0) / 1000;
   }
 
   private stopTimer(): void {

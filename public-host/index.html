@@ -42,6 +42,11 @@
             発声補正 ms
             <input id="outputOffsetInput" type="number" min="-200" max="200" step="1" value="0" />
           </label>
+          <label class="wide inline-check">
+            <input id="autoLatencyInput" type="checkbox" checked />
+            自動出力レイテンシ補正
+          </label>
+          <p class="latency-hint wide">推定出力遅延: <strong id="localLatencyValue">--</strong></p>
           <button id="startButton" type="button">Start</button>
           <button id="stopButton" type="button">Stop</button>
         </form>

@@ -150,6 +150,28 @@ select {
   background: #fff;
 }
 
+input[type="checkbox"] {
+  width: 18px;
+  min-height: 18px;
+  accent-color: #167a70;
+}
+
+.inline-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.latency-hint {
+  margin: -6px 0 0;
+  color: #5b655f;
+  font-size: 0.9rem;
+}
+
+.latency-hint strong {
+  font-variant-numeric: tabular-nums;
+}
+
 button {
   min-height: 46px;
   border: 0;

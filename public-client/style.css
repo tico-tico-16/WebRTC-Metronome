@@ -112,6 +112,28 @@ input {
   background: #fff;
 }
 
+input[type="checkbox"] {
+  width: 18px;
+  min-height: 18px;
+  accent-color: #1f776f;
+}
+
+.inline-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.latency-hint {
+  margin: -4px 0 0;
+  color: #5d6963;
+  font-size: 0.9rem;
+}
+
+.latency-hint strong {
+  font-variant-numeric: tabular-nums;
+}
+
 #syncStatus {
   display: block;
   min-height: 28px;
