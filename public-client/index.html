@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>P2P Sync Metronome Client</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="panel hero">
+        <p class="eyebrow">Participant</p>
+        <h1>P2P同期メトロノーム</h1>
+        <p id="connectionStatus">Disconnected</p>
+      </section>
+
+      <section class="grid">
+        <section class="panel controls">
+          <button id="joinButton" type="button">Join</button>
+          <button id="audioButton" type="button">Enable Audio</button>
+          <strong id="syncStatus">waiting</strong>
+        </section>
+
+        <section class="panel metrics">
+          <div><span>BPM</span><strong id="bpmValue">--</strong></div>
+          <div><span>拍子</span><strong id="meterValue">--</strong></div>
+          <div><span>現在拍</span><strong id="beatValue">--</strong></div>
+          <div><span>RTT</span><strong id="rttValue">--</strong></div>
+          <div><span>offset</span><strong id="offsetValue">--</strong></div>
+          <div><span>jitter</span><strong id="jitterValue">--</strong></div>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="/main.ts"></script>
+  </body>
+</html>

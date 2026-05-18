@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>P2P Sync Metronome Host</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="panel hero">
+        <div>
+          <p class="eyebrow">Host</p>
+          <h1>P2P同期メトロノーム</h1>
+          <p class="status" id="connectionStatus">Signaling disconnected</p>
+        </div>
+        <div class="url-box">
+          <span>参加者URL</span>
+          <strong id="participantUrl">http://localhost:3000</strong>
+        </div>
+      </section>
+
+      <section class="grid">
+        <form class="panel controls" id="controls">
+          <label>
+            BPM
+            <input id="bpmInput" type="number" min="30" max="240" value="120" />
+          </label>
+          <label>
+            拍子
+            <select id="meterSelect">
+              <option value="3/4">3/4</option>
+              <option value="4/4" selected>4/4</option>
+              <option value="5/4">5/4</option>
+              <option value="6/8">6/8</option>
+            </select>
+          </label>
+          <button id="startButton" type="button">Start</button>
+          <button id="stopButton" type="button">Stop</button>
+        </form>
+
+        <section class="panel">
+          <div class="section-head">
+            <h2>参加者</h2>
+            <span id="participantCount">0 connected</span>
+          </div>
+          <ul id="participantList" class="participants"></ul>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="/main.ts"></script>
+  </body>
+</html>
