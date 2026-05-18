@@ -11,7 +11,7 @@ export type ClockStats = {
 type Sender = (message: SyncMessage) => void;
 
 export function nowSeconds(): number {
-  return performance.now() / 1000;
+  return (performance.timeOrigin + performance.now()) / 1000;
 }
 
 export class ClockSync {

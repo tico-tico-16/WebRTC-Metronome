@@ -1,7 +1,7 @@
 import type { SyncMessage } from "../src/types.ts";
 
 export function nowSeconds(): number {
-  return performance.now() / 1000;
+  return (performance.timeOrigin + performance.now()) / 1000;
 }
 
 export function createHostSyncHandler(sendReport: (message: SyncMessage) => void) {

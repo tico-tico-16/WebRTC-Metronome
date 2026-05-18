@@ -1,4 +1,5 @@
 import type { BeatInfo, MetronomeConfig } from "../src/types.ts";
+import { nowSeconds } from "./clockSync.ts";
 
 export function parseMeter(value: string): Pick<MetronomeConfig, "beatsPerBar" | "beatUnit"> {
   const [beats, unit] = value.split("/").map(Number);
@@ -57,7 +58,7 @@ export class HostMetronomeScheduler {
     if (!this.context || this.startHostTime === null) return;
 
     const audioNow = this.context.currentTime;
-    const hostNow = performance.now() / 1000;
+    const hostNow = nowSeconds();
     const beatLength = secondsPerBeat(this.config);
 
     while (true) {
