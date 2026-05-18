@@ -10,7 +10,6 @@ const startButton = document.querySelector<HTMLButtonElement>("#startButton")!;
 const stopButton = document.querySelector<HTMLButtonElement>("#stopButton")!;
 const outputOffsetInput = document.querySelector<HTMLInputElement>("#outputOffsetInput")!;
 const connectionStatus = document.querySelector<HTMLElement>("#connectionStatus")!;
-const participantUrl = document.querySelector<HTMLElement>("#participantUrl")!;
 const participantCount = document.querySelector<HTMLElement>("#participantCount")!;
 const participantList = document.querySelector<HTMLUListElement>("#participantList")!;
 
@@ -37,8 +36,6 @@ function setPlaying(nextPlaying: boolean): void {
   startButton.disabled = nextPlaying;
   stopButton.disabled = !nextPlaying;
 }
-
-participantUrl.textContent = `${location.protocol}//${location.hostname}:3000`;
 
 const signaling = new SignalingClient();
 const webRTC = new HostWebRTC(

@@ -1,9 +1,14 @@
+import { networkInterfaces } from "node:os";
 import { createPeerData, removePeer, routeSignal, type PeerData } from "./rooms";
 import type { SignalMessage } from "./types";
 
 const clientRoot = `${import.meta.dir}/../public-client`;
 const hostRoot = `${import.meta.dir}/../public-host`;
 const transpiler = new Bun.Transpiler({ loader: "ts", target: "browser" });
+const lanHost = detectLanHost();
+const participantUrl = `http://${lanHost}:3000`;
+const hostUrl = `http://${lanHost}:3001`;
+const signalingUrl = `ws://${lanHost}:3001/ws`;
 
 const contentTypes: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -15,6 +20,30 @@ const contentTypes: Record<string, string> = {
 function extensionOf(pathname: string): string {
   const dot = pathname.lastIndexOf(".");
   return dot === -1 ? "" : pathname.slice(dot);
+}
+
+function privateIpv4Rank(address: string): number {
+  if (address.startsWith("192.168.")) return 1;
+  if (address.startsWith("10.")) return 2;
+
+  const match = /^172\.(\d{1,3})\./.exec(address);
+  if (match) {
+    const secondOctet = Number(match[1]);
+    if (secondOctet >= 16 && secondOctet <= 31) return 3;
+  }
+
+  if (address.startsWith("100.")) return 10;
+  return 20;
+}
+
+function detectLanHost(): string {
+  const candidates = Object.values(networkInterfaces())
+    .flatMap((interfaces) => interfaces ?? [])
+    .filter((networkInterface) => networkInterface.family === "IPv4" && !networkInterface.internal)
+    .map((networkInterface) => networkInterface.address)
+    .sort((a, b) => privateIpv4Rank(a) - privateIpv4Rank(b));
+
+  return candidates[0] ?? "localhost";
 }
 
 async function serveStatic(root: string, request: Request): Promise<Response> {
@@ -40,6 +69,11 @@ async function serveStatic(root: string, request: Request): Promise<Response> {
   if (extension === ".ts") {
     const source = await file.text();
     return new Response(transpiler.transformSync(source), { headers });
+  }
+
+  if (filePath === `${hostRoot}/index.html`) {
+    const source = await file.text();
+    return new Response(source.replaceAll("__PARTICIPANT_URL__", participantUrl), { headers });
   }
 
   return new Response(file, { headers });
@@ -79,6 +113,6 @@ Bun.serve({
   },
 });
 
-console.log("Participant page: http://localhost:3000");
-console.log("Host page:        http://localhost:3001");
-console.log("Signaling:        ws://localhost:3001/ws");
+console.log(`Participant page: ${participantUrl}`);
+console.log(`Host page:        ${hostUrl}`);
+console.log(`Signaling:        ${signalingUrl}`);
