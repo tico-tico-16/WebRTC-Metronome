@@ -1,14 +1,6 @@
 import type { BeatInfo, MetronomeConfig } from "../src/types.ts";
 import { nowSeconds } from "./clockSync.ts";
 
-export function parseMeter(value: string): Pick<MetronomeConfig, "beatsPerBar" | "beatUnit"> {
-  const [beats, unit] = value.split("/").map(Number);
-  return {
-    beatsPerBar: beats || 4,
-    beatUnit: unit || 4,
-  };
-}
-
 export function secondsPerBeat(config: MetronomeConfig): number {
   return 60 / config.bpm;
 }
@@ -22,7 +14,7 @@ export function beatAtHostTime(hostTime: number, startHostTime: number | null, c
   const beatIndex = Math.floor((hostTime - startHostTime) / beatLength);
   return {
     beatIndex,
-    beatInBar: (beatIndex % config.beatsPerBar) + 1,
+    beatInBar: config.beatsPerBar > 0 ? (beatIndex % config.beatsPerBar) + 1 : 0,
     secondsPerBeat: beatLength,
   };
 }
@@ -71,7 +63,7 @@ export class HostMetronomeScheduler {
       const audioTime = audioNow + (beatHostTime - hostNow) + this.outputOffsetSeconds;
       if (audioTime > audioNow + 0.18) break;
       if (audioTime >= audioNow - 0.02) {
-        this.click(audioTime, this.nextBeatIndex % this.config.beatsPerBar === 0);
+        this.click(audioTime, this.config.beatsPerBar > 0 && this.nextBeatIndex % this.config.beatsPerBar === 0);
       }
       this.nextBeatIndex += 1;
     }

@@ -34,7 +34,7 @@ let peerState = "disconnected";
 
 function render(): void {
   bpmValue.textContent = String(config.bpm);
-  meterValue.textContent = `${config.beatsPerBar}/${config.beatUnit}`;
+  meterValue.textContent = String(config.beatsPerBar);
   rttValue.textContent = clockSync.stats.rtt === null ? "--" : `${(clockSync.stats.rtt * 1000).toFixed(1)}ms`;
   offsetValue.textContent = clockSync.stats.offset === null ? "--" : `${(clockSync.stats.offset * 1000).toFixed(1)}ms`;
   jitterValue.textContent = clockSync.stats.jitter === null ? "--" : `${(clockSync.stats.jitter * 1000).toFixed(1)}ms`;

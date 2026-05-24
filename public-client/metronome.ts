@@ -14,7 +14,7 @@ export function beatAtHostTime(hostTime: number, startHostTime: number | null, c
   const beatIndex = Math.floor((hostTime - startHostTime) / beatLength);
   return {
     beatIndex,
-    beatInBar: (beatIndex % config.beatsPerBar) + 1,
+    beatInBar: config.beatsPerBar > 0 ? (beatIndex % config.beatsPerBar) + 1 : 0,
     secondsPerBeat: beatLength,
   };
 }
@@ -75,7 +75,7 @@ export class MetronomeScheduler {
 
       if (audioTime > audioNow + lookAhead) break;
       if (audioTime >= audioNow - 0.02) {
-        this.click(audioTime, this.nextBeatIndex % this.config.beatsPerBar === 0);
+        this.click(audioTime, this.config.beatsPerBar > 0 && this.nextBeatIndex % this.config.beatsPerBar === 0);
       }
       this.nextBeatIndex += 1;
     }

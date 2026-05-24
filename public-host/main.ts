@@ -1,11 +1,11 @@
 import type { MetronomeConfig, SignalMessage } from "../src/types.ts";
 import { nowSeconds } from "./clockSync.ts";
-import { beatAtHostTime, HostMetronomeScheduler, parseMeter } from "./metronome.ts";
+import { beatAtHostTime, HostMetronomeScheduler } from "./metronome.ts";
 import { SignalingClient } from "./signaling.ts";
 import { HostWebRTC } from "./webrtc.ts";
 
 const bpmInput = document.querySelector<HTMLInputElement>("#bpmInput")!;
-const meterSelect = document.querySelector<HTMLSelectElement>("#meterSelect")!;
+const beatInput = document.querySelector<HTMLInputElement>("#beatInput")!;
 const startButton = document.querySelector<HTMLButtonElement>("#startButton")!;
 const stopButton = document.querySelector<HTMLButtonElement>("#stopButton")!;
 const outputOffsetInput = document.querySelector<HTMLInputElement>("#outputOffsetInput")!;
@@ -23,16 +23,19 @@ function readOutputOffsetMs(): number {
 }
 
 function readConfig(): MetronomeConfig {
+  const beatValue = Number(beatInput.value);
+  const beatsPerBar = Number.isFinite(beatValue) ? Math.max(0, Math.floor(beatValue)) : 4;
   return {
     bpm: Math.max(30, Math.min(240, Number(bpmInput.value) || 120)),
-    ...parseMeter(meterSelect.value),
+    beatsPerBar,
+    beatUnit: 4,
   };
 }
 
 function setPlaying(nextPlaying: boolean): void {
   isPlaying = nextPlaying;
   bpmInput.disabled = nextPlaying;
-  meterSelect.disabled = nextPlaying;
+  beatInput.disabled = nextPlaying;
   startButton.disabled = nextPlaying;
   stopButton.disabled = !nextPlaying;
 }
@@ -122,7 +125,7 @@ function broadcastConfigWhenStopped(): void {
 }
 
 bpmInput.addEventListener("change", broadcastConfigWhenStopped);
-meterSelect.addEventListener("change", broadcastConfigWhenStopped);
+beatInput.addEventListener("change", broadcastConfigWhenStopped);
 outputOffsetInput.addEventListener("input", () => {
   scheduler.setOutputOffsetMs(readOutputOffsetMs());
 });
