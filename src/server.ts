@@ -1,24 +1,14 @@
 import { networkInterfaces } from "node:os";
 import QRCode from "qrcode";
-import { createPeerData, removePeer, routeSignal, type PeerData } from "./rooms";
+import { configureRooms, createPeerData, removePeer, routeSignal, type PeerData } from "./rooms";
 import type { SignalMessage } from "./types";
 
 const clientRoot = `${import.meta.dir}/../public-client`;
 const hostRoot = `${import.meta.dir}/../public-host`;
 const transpiler = new Bun.Transpiler({ loader: "ts", target: "browser" });
 const lanHost = detectLanHost();
-const participantUrl = `http://${lanHost}:3000`;
 const hostUrl = `http://${lanHost}:3001`;
 const signalingUrl = `ws://${lanHost}:3001/ws`;
-const participantQrSvg = await QRCode.toString(participantUrl, {
-  type: "svg",
-  errorCorrectionLevel: "M",
-  margin: 2,
-  color: {
-    dark: "#111111",
-    light: "#ffffff",
-  },
-});
 
 const contentTypes: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -81,18 +71,25 @@ async function serveStatic(root: string, request: Request): Promise<Response> {
     return new Response(transpiler.transformSync(source), { headers });
   }
 
-  if (filePath === `${hostRoot}/index.html`) {
-    const source = await file.text();
-    return new Response(
-      source
-        .replaceAll("__PARTICIPANT_URL__", participantUrl)
-        .replaceAll("__PARTICIPANT_QR__", participantQrSvg),
-      { headers },
-    );
-  }
-
   return new Response(file, { headers });
 }
+
+configureRooms({
+  async createParticipantInvite(roomId) {
+    const participantUrl = `http://${lanHost}:3000/?room=${encodeURIComponent(roomId)}`;
+    const participantQrSvg = await QRCode.toString(participantUrl, {
+      type: "svg",
+      errorCorrectionLevel: "M",
+      margin: 2,
+      color: {
+        dark: "#111111",
+        light: "#ffffff",
+      },
+    });
+
+    return { participantUrl, participantQrSvg };
+  },
+});
 
 Bun.serve<PeerData>({
   port: 3001,
@@ -109,7 +106,9 @@ Bun.serve<PeerData>({
   websocket: {
     message(socket, raw) {
       try {
-        routeSignal(socket, JSON.parse(String(raw)) as SignalMessage);
+        void routeSignal(socket, JSON.parse(String(raw)) as SignalMessage).catch((error) => {
+          socket.send(JSON.stringify({ type: "error", message: `Signaling failed: ${error}` }));
+        });
       } catch (error) {
         socket.send(JSON.stringify({ type: "error", message: `Invalid signaling message: ${error}` }));
       }
@@ -128,6 +127,6 @@ Bun.serve({
   },
 });
 
-console.log(`Participant page: ${participantUrl}`);
+console.log(`Participant pages are created per room from the host page.`);
 console.log(`Host page:        ${hostUrl}`);
 console.log(`Signaling:        ${signalingUrl}`);

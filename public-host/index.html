@@ -14,12 +14,13 @@
           <h1>P2P同期メトロノーム</h1>
           <p class="status" id="connectionStatus">Signaling disconnected</p>
         </div>
-        <div class="url-box">
+        <button id="createRoomButton" class="create-room" type="button">部屋を作成</button>
+        <div id="inviteBox" class="url-box" hidden>
           <div>
             <span>参加者URL</span>
-            <strong id="participantUrl">__PARTICIPANT_URL__</strong>
+            <strong id="participantUrl"></strong>
           </div>
-          <div id="participantQr" class="qr-code" aria-label="参加者URLのQRコード">__PARTICIPANT_QR__</div>
+          <div id="participantQr" class="qr-code" aria-label="参加者URLのQRコード"></div>
         </div>
       </section>
 

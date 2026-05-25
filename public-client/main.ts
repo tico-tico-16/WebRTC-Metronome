@@ -4,7 +4,6 @@ import { beatAtHostTime, MetronomeScheduler } from "./metronome.ts";
 import { SignalingClient } from "./signaling.ts";
 import { ClientWebRTC } from "./webrtc.ts";
 
-const joinButton = document.querySelector<HTMLButtonElement>("#joinButton")!;
 const audioButton = document.querySelector<HTMLButtonElement>("#audioButton")!;
 const connectionStatus = document.querySelector<HTMLElement>("#connectionStatus")!;
 const syncStatus = document.querySelector<HTMLElement>("#syncStatus")!;
@@ -15,6 +14,7 @@ const rttValue = document.querySelector<HTMLElement>("#rttValue")!;
 const offsetValue = document.querySelector<HTMLElement>("#offsetValue")!;
 const jitterValue = document.querySelector<HTMLElement>("#jitterValue")!;
 const outputOffsetInput = document.querySelector<HTMLInputElement>("#outputOffsetInput")!;
+const roomId = new URLSearchParams(location.search).get("room")?.trim() ?? "";
 
 const signaling = new SignalingClient();
 const webRTC = new ClientWebRTC((message) => signaling.send(message));
@@ -118,7 +118,9 @@ function handleControl(message: ControlMessage): void {
 
 signaling.onMessage((message: SignalMessage) => {
   if (message.type === "registered") {
-    connectionStatus.textContent = `Registered as ${message.id}`;
+    hasJoined = true;
+    connectionStatus.textContent = `Joined room ${message.roomId}`;
+    render();
     return;
   }
 
@@ -153,13 +155,20 @@ webRTC.onSync((message) => {
   render();
 });
 
-joinButton.addEventListener("click", () => {
+function joinSharedRoom(): void {
+  if (!roomId) {
+    audioButton.disabled = true;
+    outputOffsetInput.disabled = true;
+    connectionStatus.textContent = "ホストのURLまたはQRコードからアクセスしてください";
+    render();
+    return;
+  }
+
   hasJoined = true;
-  signaling.connect(`Client ${Math.floor(Math.random() * 1000)}`);
-  joinButton.disabled = true;
+  signaling.connect(roomId, `Client ${Math.floor(Math.random() * 1000)}`);
   connectionStatus.textContent = "Joining...";
   render();
-});
+}
 
 audioButton.addEventListener("click", () => {
   void scheduler.enableAudio().then(() => {
@@ -174,4 +183,5 @@ outputOffsetInput.addEventListener("input", () => {
 });
 
 setInterval(render, 100);
+joinSharedRoom();
 render();

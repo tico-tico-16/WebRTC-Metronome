@@ -6,17 +6,28 @@ export class SignalingClient {
   private socket: WebSocket | null = null;
   private listeners = new Set<Listener>();
 
-  connect(name: string): void {
+  connect(roomId: string, name: string): void {
+    if (
+      this.socket &&
+      (this.socket.readyState === WebSocket.CONNECTING || this.socket.readyState === WebSocket.OPEN)
+    ) {
+      return;
+    }
+
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
     this.socket = new WebSocket(`${protocol}//${location.hostname}:3001/ws`);
 
     this.socket.addEventListener("open", () => {
-      this.send({ type: "register", role: "client", name });
+      this.send({ type: "register", role: "client", roomId, name });
     });
 
     this.socket.addEventListener("message", (event) => {
       const message = JSON.parse(String(event.data)) as SignalMessage;
       for (const listener of this.listeners) listener(message);
+    });
+
+    this.socket.addEventListener("close", () => {
+      this.socket = null;
     });
   }
 

@@ -8,7 +8,7 @@
 [Project Root]/
 ├── src/
 │   ├── server.ts              # Bun.serve によるHTTP配信とWebSocketシグナリング
-│   ├── rooms.ts               # ホスト1台 + 複数クライアントの接続管理
+│   ├── rooms.ts               # 部屋IDごとのホスト1台 + 複数クライアントの接続管理
 │   └── types.ts               # シグナリング/DataChannelで使う共有型
 ├── public-host/
 │   ├── index.html             # ホスト画面
@@ -76,7 +76,7 @@ Technologies: Bun, TypeScript, WebSocket, `qrcode`
 
 Name: Fixed single-room peer registry
 
-Description: `rooms.ts` がホスト1台と複数参加者を管理します。参加者が接続するとホストへ `client_joined` を通知し、以後の `offer`、`answer`、`ice` を宛先へ転送します。部屋IDはMVPでは固定で、参加者同士は直接接続しません。
+Description: `rooms.ts` がランダムな部屋IDごとにホスト1台と複数参加者を管理します。ホストが部屋を作成すると参加者URLとQRコードが発行され、参加者は共有URLの `room` パラメータで対象部屋へ自動参加します。参加者が接続するとホストへ `client_joined` を通知し、以後の `offer`、`answer`、`ice` を同じ部屋内の宛先へ転送します。部屋一覧や参加者による部屋検索はありません。
 
 Technologies: Bun WebSocket, TypeScript
 
@@ -84,7 +84,7 @@ Technologies: Bun WebSocket, TypeScript
 
 Name: Host browser app
 
-Description: ホストだけがBPM、拍子、Start、Stopを操作できます。参加者一覧、RTT、offset、jitter、参加者URL、QRコードを表示します。各参加者に対して1つの `RTCPeerConnection` を作り、`control` と `sync` の2つのDataChannelを開きます。
+Description: ホストだけが部屋作成、BPM、拍子、Start、Stopを操作できます。部屋作成後に参加者一覧、RTT、offset、jitter、参加者URL、QRコードを表示します。各参加者に対して1つの `RTCPeerConnection` を作り、`control` と `sync` の2つのDataChannelを開きます。
 
 Technologies: TypeScript, WebRTC, Web Audio API, HTML/CSS
 
@@ -92,7 +92,7 @@ Technologies: TypeScript, WebRTC, Web Audio API, HTML/CSS
 
 Name: Participant browser app
 
-Description: 参加者はJoinとEnable Audioを操作し、ホストから受け取った状態に従ってローカルでクリック音を予約再生します。`sync` DataChannel上のping/pongからRTT、offset、jitterを推定し、ホスト時刻をローカル時刻へ変換します。
+Description: 参加者はホストから共有されたURLまたはQRコードで開くと自動参加し、Enable Audioだけを操作します。ホストから受け取った状態に従ってローカルでクリック音を予約再生します。`sync` DataChannel上のping/pongからRTT、offset、jitterを推定し、ホスト時刻をローカル時刻へ変換します。
 
 Technologies: TypeScript, WebRTC, Web Audio API, HTML/CSS
 
@@ -121,7 +121,7 @@ bun install
 bun run dev
 ```
 
-ローカル起動後、ホスト画面は `http://localhost:3001`、参加者画面は `http://localhost:3000` で開きます。同一LAN内のスマホや別PCからは、ホスト画面に表示される `http://<LAN IP>:3000` またはQRコードを使って参加します。
+ローカル起動後、ホスト画面は `http://localhost:3001` で開きます。同一LAN内のスマホや別PCからは、ホスト画面で部屋を作成した後に表示される `http://<LAN IP>:3000/?room=<roomId>` またはQRコードを使って参加します。
 
 Testing:
 
@@ -129,13 +129,13 @@ Testing:
 bun run typecheck
 ```
 
-現時点では自動テストはありません。動作確認は、同一PCの複数ブラウザタブまたは同一Wi-Fi内の複数端末で、Join、Enable Audio、Start、Stop、途中参加、RTT/offset/jitter表示、発声補正を確認します。
+現時点では自動テストはありません。動作確認は、同一PCの複数ブラウザタブまたは同一Wi-Fi内の複数端末で、部屋作成、共有URL/QRからの自動参加、Enable Audio、Start、Stop、途中参加、RTT/offset/jitter表示、発声補正を確認します。
 
 ## 5. Future Considerations / Roadmap
 
 - WebRTC接続状態やDataChannel状態の診断表示を増やす。
 - マイク測定による実発声音のズレ補正を検討する。
-- ルームIDや複数ホストを扱う場合は、`rooms.ts` の固定1部屋構成を拡張する。
+- 部屋の永続化やホスト再接続が必要な場合は、`rooms.ts` のインメモリ部屋管理を拡張する。
 - HTTPS配信や証明書対応が必要な環境では、BunサーバのTLS設定を追加する。
 - 型チェックに加えて、時計同期ロジックやメッセージ処理の単体テストを追加する。
 

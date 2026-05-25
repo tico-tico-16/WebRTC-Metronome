@@ -1,8 +1,16 @@
 export type PeerRole = "host" | "client";
 
 export type SignalMessage =
-  | { type: "register"; role: PeerRole; name?: string }
-  | { type: "registered"; role: PeerRole; id: string; hostPresent: boolean }
+  | { type: "register"; role: PeerRole; name?: string; roomId?: string }
+  | {
+      type: "registered";
+      role: PeerRole;
+      id: string;
+      roomId: string;
+      hostPresent: boolean;
+      participantUrl?: string;
+      participantQrSvg?: string;
+    }
   | { type: "host_available"; hostPresent: boolean }
   | { type: "client_joined"; clientId: string; name: string }
   | { type: "client_left"; clientId: string }

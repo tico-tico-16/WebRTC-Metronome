@@ -8,12 +8,17 @@ const bpmInput = document.querySelector<HTMLInputElement>("#bpmInput")!;
 const beatInput = document.querySelector<HTMLInputElement>("#beatInput")!;
 const startButton = document.querySelector<HTMLButtonElement>("#startButton")!;
 const stopButton = document.querySelector<HTMLButtonElement>("#stopButton")!;
+const createRoomButton = document.querySelector<HTMLButtonElement>("#createRoomButton")!;
 const outputOffsetInput = document.querySelector<HTMLInputElement>("#outputOffsetInput")!;
 const connectionStatus = document.querySelector<HTMLElement>("#connectionStatus")!;
+const inviteBox = document.querySelector<HTMLElement>("#inviteBox")!;
+const participantUrl = document.querySelector<HTMLElement>("#participantUrl")!;
+const participantQr = document.querySelector<HTMLElement>("#participantQr")!;
 const participantCount = document.querySelector<HTMLElement>("#participantCount")!;
 const participantList = document.querySelector<HTMLUListElement>("#participantList")!;
 
 let isPlaying = false;
+let hasRoom = false;
 let startHostTime: number | null = null;
 let latestSentHostTime = nowSeconds();
 const scheduler = new HostMetronomeScheduler();
@@ -34,10 +39,11 @@ function readConfig(): MetronomeConfig {
 
 function setPlaying(nextPlaying: boolean): void {
   isPlaying = nextPlaying;
-  bpmInput.disabled = nextPlaying;
-  beatInput.disabled = nextPlaying;
-  startButton.disabled = nextPlaying;
-  stopButton.disabled = !nextPlaying;
+  bpmInput.disabled = nextPlaying || !hasRoom;
+  beatInput.disabled = nextPlaying || !hasRoom;
+  outputOffsetInput.disabled = !hasRoom;
+  startButton.disabled = nextPlaying || !hasRoom;
+  stopButton.disabled = !nextPlaying || !hasRoom;
 }
 
 const signaling = new SignalingClient();
@@ -73,7 +79,14 @@ function renderParticipants(): void {
 
 signaling.onMessage((message: SignalMessage) => {
   if (message.type === "registered") {
-    connectionStatus.textContent = `Signaling connected as ${message.id}`;
+    hasRoom = true;
+    createRoomButton.disabled = true;
+    createRoomButton.hidden = true;
+    participantUrl.textContent = message.participantUrl ?? "";
+    participantQr.innerHTML = message.participantQrSvg ?? "";
+    inviteBox.hidden = false;
+    connectionStatus.textContent = `Room ${message.roomId} ready`;
+    setPlaying(false);
     return;
   }
 
@@ -94,6 +107,7 @@ signaling.onMessage((message: SignalMessage) => {
 
   if (message.type === "error") {
     connectionStatus.textContent = message.message;
+    if (!hasRoom) createRoomButton.disabled = false;
   }
 });
 
@@ -130,6 +144,12 @@ outputOffsetInput.addEventListener("input", () => {
   scheduler.setOutputOffsetMs(readOutputOffsetMs());
 });
 
+createRoomButton.addEventListener("click", () => {
+  createRoomButton.disabled = true;
+  connectionStatus.textContent = "Creating room...";
+  signaling.connect();
+});
+
 setInterval(() => {
   if (!isPlaying) return;
   const beat = beatAtHostTime(nowSeconds(), startHostTime, readConfig());
@@ -137,4 +157,3 @@ setInterval(() => {
 }, 100);
 
 setPlaying(false);
-signaling.connect();

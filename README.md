@@ -16,7 +16,7 @@ bun run dev
 ```
 
 - Host: http://localhost:3001
-- Participant: http://localhost:3000
+- Participant: ホスト画面で部屋を作成した後に表示されるURL/QRコード
 - Signaling: ws://localhost:3001/ws
 
-同じWi-Fi内のスマホから参加する場合は、PCのIPアドレスを使って `http://<PCのIP>:3000` を開きます。
+同じWi-Fi内のスマホから参加する場合は、ホスト画面に表示される部屋専用URLまたはQRコードを使います。
