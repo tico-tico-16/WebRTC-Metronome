@@ -1,4 +1,4 @@
-import type { PeerRole, SignalMessage } from "./types";
+import type { PeerRole, SignalMessage } from "../../shared/types";
 
 type Socket = Bun.ServerWebSocket<PeerData>;
 

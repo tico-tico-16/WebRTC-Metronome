@@ -1,4 +1,4 @@
-import type { SignalMessage } from "../src/types.ts";
+import type { SignalMessage } from "../../shared/types.ts";
 
 type Listener = (message: SignalMessage) => void;
 
@@ -6,7 +6,7 @@ export class SignalingClient {
   private socket: WebSocket | null = null;
   private listeners = new Set<Listener>();
 
-  connect(roomId: string, name: string): void {
+  connect(): void {
     if (
       this.socket &&
       (this.socket.readyState === WebSocket.CONNECTING || this.socket.readyState === WebSocket.OPEN)
@@ -18,7 +18,7 @@ export class SignalingClient {
     this.socket = new WebSocket(`${protocol}//${location.hostname}:3001/ws`);
 
     this.socket.addEventListener("open", () => {
-      this.send({ type: "register", role: "client", roomId, name });
+      this.send({ type: "register", role: "host", name: "Host" });
     });
 
     this.socket.addEventListener("message", (event) => {

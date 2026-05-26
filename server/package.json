@@ -1,0 +1,15 @@
+{
+  "name": "p2pmetronom-server",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun run src/server.ts",
+    "typecheck": "bunx tsc --noEmit -p ../tsconfig.json"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "@types/qrcode": "^1.5.6"
+  }
+}

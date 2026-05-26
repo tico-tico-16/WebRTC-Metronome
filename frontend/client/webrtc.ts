@@ -1,4 +1,4 @@
-import type { ControlMessage, SignalMessage, SyncMessage } from "../src/types.ts";
+import type { ControlMessage, SignalMessage, SyncMessage } from "../../shared/types.ts";
 
 type SendSignal = (message: SignalMessage) => void;
 type ControlListener = (message: ControlMessage) => void;

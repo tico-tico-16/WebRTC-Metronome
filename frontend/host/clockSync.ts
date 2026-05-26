@@ -1,4 +1,4 @@
-import type { SyncMessage } from "../src/types.ts";
+import type { SyncMessage } from "../../shared/types.ts";
 
 export function nowSeconds(): number {
   return (performance.timeOrigin + performance.now()) / 1000;

@@ -1,4 +1,4 @@
-import type { BeatInfo, MetronomeConfig } from "../src/types.ts";
+import type { BeatInfo, MetronomeConfig } from "../../shared/types.ts";
 import { nowSeconds } from "./clockSync.ts";
 
 export function secondsPerBeat(config: MetronomeConfig): number {
@@ -19,24 +19,33 @@ export function beatAtHostTime(hostTime: number, startHostTime: number | null, c
   };
 }
 
-export class HostMetronomeScheduler {
+export class MetronomeScheduler {
   private context: AudioContext | null = null;
   private timer: number | null = null;
   private nextBeatIndex = 0;
   private config: MetronomeConfig = { bpm: 120, beatsPerBar: 4, beatUnit: 4 };
   private startHostTime: number | null = null;
+  private hostToLocalTime: (hostTime: number) => number = (hostTime) => hostTime;
+  private audioEnabled = false;
   private outputOffsetSeconds = 0;
 
   async enableAudio(): Promise<void> {
     this.context ??= new AudioContext();
     await this.context.resume();
+    this.audioEnabled = true;
   }
 
-  async start(config: MetronomeConfig, startHostTime: number, hostNow: number): Promise<void> {
-    await this.enableAudio();
+  isAudioEnabled(): boolean {
+    return this.audioEnabled && this.context?.state === "running";
+  }
+
+  start(config: MetronomeConfig, startHostTime: number, hostNow: number, hostToLocalTime: (hostTime: number) => number): void {
     this.config = config;
     this.startHostTime = startHostTime;
-    this.nextBeatIndex = Math.max(0, Math.ceil((hostNow - startHostTime) / secondsPerBeat(config)));
+    this.hostToLocalTime = hostToLocalTime;
+
+    const beatLength = secondsPerBeat(config);
+    this.nextBeatIndex = Math.max(0, Math.ceil((hostNow - startHostTime) / beatLength));
     this.stopTimer();
     this.timer = window.setInterval(() => this.scheduleAhead(), 25);
     this.scheduleAhead();
@@ -52,16 +61,19 @@ export class HostMetronomeScheduler {
   }
 
   private scheduleAhead(): void {
-    if (!this.context || this.startHostTime === null) return;
+    if (!this.isAudioEnabled() || !this.context || this.startHostTime === null) return;
 
-    const audioNow = this.context.currentTime;
-    const hostNow = nowSeconds();
     const beatLength = secondsPerBeat(this.config);
+    const audioNow = this.context.currentTime;
+    const localNow = nowSeconds();
+    const lookAhead = 0.18;
 
     while (true) {
       const beatHostTime = this.startHostTime + this.nextBeatIndex * beatLength;
-      const audioTime = audioNow + (beatHostTime - hostNow) + this.outputOffsetSeconds;
-      if (audioTime > audioNow + 0.18) break;
+      const beatLocalTime = this.hostToLocalTime(beatHostTime);
+      const audioTime = audioNow + (beatLocalTime - localNow) + this.outputOffsetSeconds;
+
+      if (audioTime > audioNow + lookAhead) break;
       if (audioTime >= audioNow - 0.02) {
         this.click(audioTime, this.config.beatsPerBar > 0 && this.nextBeatIndex % this.config.beatsPerBar === 0);
       }

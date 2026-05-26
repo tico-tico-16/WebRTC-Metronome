@@ -1,4 +1,4 @@
-import type { ControlMessage, MetronomeConfig, SignalMessage, SyncMessage } from "../src/types.ts";
+import type { ControlMessage, MetronomeConfig, SignalMessage, SyncMessage } from "../../shared/types.ts";
 import { createHostSyncHandler } from "./clockSync.ts";
 
 export type HostPeer = {

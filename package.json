@@ -1,18 +1,14 @@
 {
   "name": "p2pmetronom",
-  "module": "src/server.ts",
   "type": "module",
   "private": true,
+  "workspaces": ["frontend", "server"],
   "scripts": {
-    "dev": "bun run src/server.ts",
-    "typecheck": "bunx tsc --noEmit"
+    "dev": "bun run --workspaces --parallel dev",
+    "typecheck": "bun run --workspaces --sequential typecheck"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/qrcode": "^1.5.6",
-    "qrcode": "^1.5.4"
-  },
-  "peerDependencies": {
     "typescript": "^5"
   }
 }

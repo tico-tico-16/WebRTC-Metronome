@@ -6,26 +6,32 @@
 
 ```text
 [Project Root]/
-├── src/
-│   ├── server.ts              # Bun.serve によるHTTP配信とWebSocketシグナリング
-│   ├── rooms.ts               # 部屋IDごとのホスト1台 + 複数クライアントの接続管理
-│   └── types.ts               # シグナリング/DataChannelで使う共有型
-├── public-host/
-│   ├── index.html             # ホスト画面
-│   ├── style.css              # ホスト画面のスタイル
-│   ├── main.ts                # ホスト画面のUI制御
-│   ├── signaling.ts           # ホスト側WebSocketシグナリング
-│   ├── webrtc.ts              # ホスト側WebRTC PeerConnection管理
-│   ├── clockSync.ts           # ホスト時刻とping/pong応答
-│   └── metronome.ts           # ホスト側クリック音生成と発声補正
-├── public-client/
-│   ├── index.html             # 参加者画面
-│   ├── style.css              # 参加者画面のスタイル
-│   ├── main.ts                # 参加者画面のUI制御
-│   ├── signaling.ts           # 参加者側WebSocketシグナリング
-│   ├── webrtc.ts              # 参加者側WebRTC PeerConnection管理
-│   ├── clockSync.ts           # 参加者側のRTT/offset/jitter推定
-│   └── metronome.ts           # 参加者側クリック音生成と発声補正
+├── frontend/
+│   ├── host/
+│   │   ├── index.html         # ホスト画面
+│   │   ├── style.css          # ホスト画面のスタイル
+│   │   ├── main.ts            # ホスト画面のUI制御
+│   │   ├── signaling.ts       # ホスト側WebSocketシグナリング
+│   │   ├── webrtc.ts          # ホスト側WebRTC PeerConnection管理
+│   │   ├── clockSync.ts       # ホスト時刻とping/pong応答
+│   │   └── metronome.ts       # ホスト側クリック音生成と発声補正
+│   ├── client/
+│       ├── index.html         # 参加者画面
+│       ├── style.css          # 参加者画面のスタイル
+│       ├── main.ts            # 参加者画面のUI制御
+│       ├── signaling.ts       # 参加者側WebSocketシグナリング
+│       ├── webrtc.ts          # 参加者側WebRTC PeerConnection管理
+│       ├── clockSync.ts       # 参加者側のRTT/offset/jitter推定
+│       └── metronome.ts       # 参加者側クリック音生成と発声補正
+│   ├── package.json           # Vite配信とfrontend build
+│   └── vite.config.ts         # ViteのMPA設定
+├── server/
+│   ├── src/
+│   │   ├── server.ts          # WebSocketシグナリングサーバー
+│   │   └── rooms.ts           # 部屋IDごとのホスト1台 + 複数クライアントの接続管理
+│   └── package.json           # signaling serverの実行内容と依存関係
+├── shared/
+│   └── types.ts               # frontend/server で使う共有型
 ├── README.md                  # セットアップと起動方法
 ├── package.json               # Bunスクリプトと依存関係
 ├── bun.lock                   # Bunロックファイル
@@ -36,7 +42,7 @@
 ## 2. High-Level System Diagram
 
 ```text
-                 HTTP :3001
+                 HTTP :3000/host/
         ┌────────────────────────┐
         │     Host Browser        │
         │  UI / Web Audio / RTC   │
@@ -45,42 +51,54 @@
                     │ ws://<host-ip>:3001/ws
                     ▼
         ┌────────────────────────┐
-        │      Bun Server         │
-        │ HTTP static + signaling │
+        │   Signaling Server      │
+        │       WebSocket         │
         └───────────┬────────────┘
-                    │ HTTP :3000
+                    │ WebSocket signaling only
                     ▼
         ┌────────────────────────┐
         │   Participant Browser   │
         │  UI / Web Audio / RTC   │
         └────────────────────────┘
 
+Frontend static files are served separately by Vite:
+  /host/   -> frontend/host/index.html
+  /client/ -> frontend/client/index.html
+
 Host Browser ── WebRTC DataChannel ── Participant Browser
           control: config / start / stop / state_snapshot
           sync:    ping / pong / sync_report
 ```
 
-サーバはWebRTC接続を成立させるためのシグナリングだけを中継します。メトロノームのBPM、拍子、開始時刻、停止命令、同期レポートは、ホストブラウザと各参加者ブラウザのWebRTC DataChannelで直接送受信されます。音声データは送信せず、各端末がWeb Audio APIでクリック音を生成します。
+serverはWebRTC接続を成立させるためのシグナリングだけを中継します。frontendはViteでホスト画面と参加者画面を配信します。メトロノームのBPM、拍子、開始時刻、停止命令、同期レポートは、ホストブラウザと各参加者ブラウザのWebRTC DataChannelで直接送受信されます。音声データは送信せず、各端末がWeb Audio APIでクリック音を生成します。
 
 ## 3. Core Components
 
-### 3.1. Bun Server
+### 3.1. Frontend Static Serving
 
-Name: Bun signaling/static server
+Name: Vite frontend
 
-Description: `Bun.serve` を2つ起動し、参加者画面を `:3000`、ホスト画面とWebSocketシグナリングを `:3001` で配信します。ホスト画面の参加者URLにはLAN内IPv4アドレスを埋め込み、同じURLのQRコードを `qrcode` ライブラリで生成します。
+Description: `frontend/package.json` の `dev` は Vite を `--host 0.0.0.0 --port 3000 --strictPort` で起動し、`frontend/host/index.html` と `frontend/client/index.html` を配信します。TypeScript、CSS、HTML内のローカルアセット参照はViteが処理します。将来的にはこの責務をCloudflare Pagesへ移す想定です。
+
+Technologies: Vite, TypeScript, HTML/CSS
+
+### 3.2. Signaling Server
+
+Name: Bun signaling server
+
+Description: `server/src/server.ts` が `:3001` の `/ws` だけをWebSocketとして扱い、シグナリングを中継します。ホスト画面の参加者URLにはLAN内IPv4アドレスと `/client/?room=<roomId>` を埋め込み、同じURLのQRコードを `qrcode` ライブラリで生成します。将来的にはこの責務をCloudflare Workers + Durable Objectへ移す想定です。
 
 Technologies: Bun, TypeScript, WebSocket, `qrcode`
 
-### 3.2. Room Management
+### 3.3. Room Management
 
 Name: Fixed single-room peer registry
 
-Description: `rooms.ts` がランダムな部屋IDごとにホスト1台と複数参加者を管理します。ホストが部屋を作成すると参加者URLとQRコードが発行され、参加者は共有URLの `room` パラメータで対象部屋へ自動参加します。参加者が接続するとホストへ `client_joined` を通知し、以後の `offer`、`answer`、`ice` を同じ部屋内の宛先へ転送します。部屋一覧や参加者による部屋検索はありません。
+Description: `server/src/rooms.ts` がランダムな部屋IDごとにホスト1台と複数参加者を管理します。ホストが部屋を作成すると参加者URLとQRコードが発行され、参加者は共有URLの `room` パラメータで対象部屋へ自動参加します。参加者が接続するとホストへ `client_joined` を通知し、以後の `offer`、`answer`、`ice` を同じ部屋内の宛先へ転送します。部屋一覧や参加者による部屋検索はありません。
 
 Technologies: Bun WebSocket, TypeScript
 
-### 3.3. Host Application
+### 3.4. Host Application
 
 Name: Host browser app
 
@@ -88,7 +106,7 @@ Description: ホストだけが部屋作成、BPM、拍子、Start、Stopを操�
 
 Technologies: TypeScript, WebRTC, Web Audio API, HTML/CSS
 
-### 3.4. Participant Application
+### 3.5. Participant Application
 
 Name: Participant browser app
 
@@ -96,7 +114,7 @@ Description: 参加者はホストから共有されたURLまたはQRコード�
 
 Technologies: TypeScript, WebRTC, Web Audio API, HTML/CSS
 
-### 3.5. Metronome Scheduling
+### 3.6. Metronome Scheduling
 
 Name: Local Web Audio scheduler
 
@@ -104,13 +122,21 @@ Description: ホスト・参加者のどちらも音声ファイルは使わず�
 
 Technologies: Web Audio API
 
-### 3.6. Clock Synchronization
+### 3.7. Clock Synchronization
 
 Name: DataChannel ping/pong clock sync
 
 Description: 参加者は `sync` DataChannelでpingを送り、ホストからpongを受け取ってRTT、offset、jitterを推定します。RTTが小さいサンプルを優先してoffsetを平均化し、jitterが十分小さくなるまで `syncing...` と表示します。
 
 Technologies: WebRTC DataChannel, `performance.timeOrigin`, `performance.now`
+
+### 3.8. Shared Types
+
+Name: Shared protocol types
+
+Description: `shared/types.ts` に、シグナリング、制御メッセージ、同期メッセージ、メトロノーム設定の型を集約します。frontend と server の両方が同じプロトコル型を参照し、将来のCloudflare分離時にも境界を保ちます。
+
+Technologies: TypeScript
 
 ## 4. Development & Testing Environment
 
@@ -121,7 +147,7 @@ bun install
 bun run dev
 ```
 
-ローカル起動後、ホスト画面は `http://localhost:3001` で開きます。同一LAN内のスマホや別PCからは、ホスト画面で部屋を作成した後に表示される `http://<LAN IP>:3000/?room=<roomId>` またはQRコードを使って参加します。
+ローカル起動後、ホスト画面は `http://localhost:3000/host/` で開きます。同一LAN内のスマホや別PCからは、ホスト画面で部屋を作成した後に表示される `http://<LAN IP>:3000/client/?room=<roomId>` またはQRコードを使って参加します。
 
 Testing:
 

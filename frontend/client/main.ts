@@ -1,4 +1,4 @@
-import type { ControlMessage, MetronomeConfig, SignalMessage } from "../src/types.ts";
+import type { ControlMessage, MetronomeConfig, SignalMessage } from "../../shared/types.ts";
 import { ClockSync } from "./clockSync.ts";
 import { beatAtHostTime, MetronomeScheduler } from "./metronome.ts";
 import { SignalingClient } from "./signaling.ts";

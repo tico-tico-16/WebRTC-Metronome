@@ -1,26 +1,11 @@
 import { networkInterfaces } from "node:os";
 import QRCode from "qrcode";
 import { configureRooms, createPeerData, removePeer, routeSignal, type PeerData } from "./rooms";
-import type { SignalMessage } from "./types";
+import type { SignalMessage } from "../../shared/types";
 
-const clientRoot = `${import.meta.dir}/../public-client`;
-const hostRoot = `${import.meta.dir}/../public-host`;
-const transpiler = new Bun.Transpiler({ loader: "ts", target: "browser" });
 const lanHost = detectLanHost();
-const hostUrl = `http://${lanHost}:3001`;
+const hostUrl = `http://${lanHost}:3000/host/`;
 const signalingUrl = `ws://${lanHost}:3001/ws`;
-
-const contentTypes: Record<string, string> = {
-  ".html": "text/html; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-  ".ts": "text/javascript; charset=utf-8",
-};
-
-function extensionOf(pathname: string): string {
-  const dot = pathname.lastIndexOf(".");
-  return dot === -1 ? "" : pathname.slice(dot);
-}
 
 function privateIpv4Rank(address: string): number {
   if (address.startsWith("192.168.")) return 1;
@@ -46,37 +31,9 @@ function detectLanHost(): string {
   return candidates[0] ?? "localhost";
 }
 
-async function serveStatic(root: string, request: Request): Promise<Response> {
-  const url = new URL(request.url);
-  const pathname = url.pathname === "/" ? "/index.html" : url.pathname;
-  const segments = decodeURIComponent(pathname)
-    .split("/")
-    .filter((segment) => segment && segment !== "." && segment !== "..");
-  const filePath = `${root}/${segments.join("/")}`;
-
-  if (!filePath.startsWith(root)) {
-    return new Response("Forbidden", { status: 403 });
-  }
-
-  const file = Bun.file(filePath);
-  if (!(await file.exists())) {
-    return new Response("Not found", { status: 404 });
-  }
-
-  const extension = extensionOf(filePath);
-  const headers = { "Content-Type": contentTypes[extension] ?? "application/octet-stream" };
-
-  if (extension === ".ts") {
-    const source = await file.text();
-    return new Response(transpiler.transformSync(source), { headers });
-  }
-
-  return new Response(file, { headers });
-}
-
 configureRooms({
   async createParticipantInvite(roomId) {
-    const participantUrl = `http://${lanHost}:3000/?room=${encodeURIComponent(roomId)}`;
+    const participantUrl = `http://${lanHost}:3000/client/?room=${encodeURIComponent(roomId)}`;
     const participantQrSvg = await QRCode.toString(participantUrl, {
       type: "svg",
       errorCorrectionLevel: "M",
@@ -101,7 +58,7 @@ Bun.serve<PeerData>({
       return upgraded ? undefined : new Response("WebSocket upgrade failed", { status: 400 });
     }
 
-    return serveStatic(hostRoot, request);
+    return new Response("Signaling server. Connect to /ws with WebSocket.", { status: 404 });
   },
   websocket: {
     message(socket, raw) {
@@ -119,14 +76,5 @@ Bun.serve<PeerData>({
   },
 });
 
-Bun.serve({
-  port: 3000,
-  hostname: "0.0.0.0",
-  fetch(request) {
-    return serveStatic(clientRoot, request);
-  },
-});
-
-console.log(`Participant pages are created per room from the host page.`);
-console.log(`Host page:        ${hostUrl}`);
+console.log(`Frontend host:    ${hostUrl}`);
 console.log(`Signaling:        ${signalingUrl}`);
