@@ -69,7 +69,7 @@ Production branch: main
 Pagesの環境変数に、WorkerのWebSocket URLを設定します。
 
 ```text
-VITE_SIGNALING_BASE_URL=wss://p2pmetronom-signaling.<your-subdomain>.workers.dev/ws
+VITE_SIGNALING_BASE_URL=wss://p2pmetronome-signaling.<your-subdomain>.workers.dev/ws
 ```
 
 ローカルでPages相当のビルドだけ確認する場合は、`frontend/.env.example` を参考に `frontend/.env.local` を作り、次を実行します。
