@@ -5,10 +5,13 @@
   "workspaces": ["frontend", "server"],
   "scripts": {
     "dev": "bun run --workspaces --parallel dev",
+    "dev:frontend": "bun run --cwd frontend dev",
+    "dev:server": "bun run --cwd server dev",
     "typecheck": "bun run --workspaces --sequential typecheck"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "typescript": "^5"
+    "typescript": "^5",
+    "wrangler": "^4.95.0"
   }
 }

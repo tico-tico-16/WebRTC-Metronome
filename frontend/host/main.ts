@@ -1,4 +1,5 @@
 import type { MetronomeConfig, SignalMessage } from "../../shared/types.ts";
+import QRCode from "qrcode";
 import { nowSeconds } from "./clockSync.ts";
 import { beatAtHostTime, HostMetronomeScheduler } from "./metronome.ts";
 import { SignalingClient } from "./signaling.ts";
@@ -82,8 +83,7 @@ signaling.onMessage((message: SignalMessage) => {
     hasRoom = true;
     createRoomButton.disabled = true;
     createRoomButton.hidden = true;
-    participantUrl.textContent = message.participantUrl ?? "";
-    participantQr.innerHTML = message.participantQrSvg ?? "";
+    void renderParticipantInvite(message.participantUrl ?? "");
     inviteBox.hidden = false;
     connectionStatus.textContent = `Room ${message.roomId} ready`;
     setPlaying(false);
@@ -112,6 +112,19 @@ signaling.onMessage((message: SignalMessage) => {
 });
 
 webRTC.onChange(renderParticipants);
+
+async function renderParticipantInvite(url: string): Promise<void> {
+  participantUrl.textContent = url;
+  participantQr.innerHTML = await QRCode.toString(url, {
+    type: "svg",
+    errorCorrectionLevel: "M",
+    margin: 2,
+    color: {
+      dark: "#111111",
+      light: "#ffffff",
+    },
+  });
+}
 
 startButton.addEventListener("click", () => {
   const config = readConfig();

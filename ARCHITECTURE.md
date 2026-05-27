@@ -23,13 +23,17 @@
 │       ├── webrtc.ts          # 参加者側WebRTC PeerConnection管理
 │       ├── clockSync.ts       # 参加者側のRTT/offset/jitter推定
 │       └── metronome.ts       # 参加者側クリック音生成と発声補正
-│   ├── package.json           # Vite配信とfrontend build
+│   ├── package.json           # Vite配信、frontend build、QR生成依存
+│   ├── tsconfig.json          # frontend用TypeScript設定
 │   └── vite.config.ts         # ViteのMPA設定
 ├── server/
 │   ├── src/
-│   │   ├── server.ts          # WebSocketシグナリングサーバー
-│   │   └── rooms.ts           # 部屋IDごとのホスト1台 + 複数クライアントの接続管理
-│   └── package.json           # signaling serverの実行内容と依存関係
+│   │   ├── index.ts           # Worker entrypoint
+│   │   └── room.ts            # Durable Objectによる部屋単位の接続管理
+│   ├── package.json           # Wrangler実行スクリプト
+│   ├── tsconfig.json          # server用TypeScript設定
+│   ├── worker-configuration.d.ts # Wrangler生成のWorker型定義
+│   └── wrangler.jsonc         # Worker、Durable Object binding、migration設定
 ├── shared/
 │   └── types.ts               # frontend/server で使う共有型
 ├── README.md                  # セットアップと起動方法
@@ -48,13 +52,14 @@
         │  UI / Web Audio / RTC   │
         └───────────┬────────────┘
                     │ WebSocket signaling only
-                    │ ws://<host-ip>:3001/ws
+                    │ ws://<host-ip>:3001/ws/host
                     ▼
         ┌────────────────────────┐
-        │   Signaling Server      │
-        │       WebSocket         │
+        │ Cloudflare Worker       │
+        │ + Durable Object Room   │
         └───────────┬────────────┘
                     │ WebSocket signaling only
+                    │ ws://<host-ip>:3001/ws/client?room=<roomId>
                     ▼
         ┌────────────────────────┐
         │   Participant Browser   │
@@ -78,25 +83,25 @@ serverはWebRTC接続を成立させるためのシグナリングだけを中�
 
 Name: Vite frontend
 
-Description: `frontend/package.json` の `dev` は Vite を `--host 0.0.0.0 --port 3000 --strictPort` で起動し、`frontend/host/index.html` と `frontend/client/index.html` を配信します。TypeScript、CSS、HTML内のローカルアセット参照はViteが処理します。将来的にはこの責務をCloudflare Pagesへ移す想定です。
+Description: `frontend/package.json` の `dev` は Vite を `--host 0.0.0.0 --port 3000 --strictPort` で起動し、`frontend/host/index.html` と `frontend/client/index.html` を配信します。TypeScript、CSS、HTML内のローカルアセット参照はViteが処理します。ホスト画面はサーバーから返された参加者URLをもとにQRコードを生成します。
 
-Technologies: Vite, TypeScript, HTML/CSS
+Technologies: Vite, TypeScript, HTML/CSS, `qrcode`
 
 ### 3.2. Signaling Server
 
-Name: Bun signaling server
+Name: Cloudflare Worker signaling server
 
-Description: `server/src/server.ts` が `:3001` の `/ws` だけをWebSocketとして扱い、シグナリングを中継します。ホスト画面の参加者URLにはLAN内IPv4アドレスと `/client/?room=<roomId>` を埋め込み、同じURLのQRコードを `qrcode` ライブラリで生成します。将来的にはこの責務をCloudflare Workers + Durable Objectへ移す想定です。
+Description: `server/src/index.ts` が Worker entrypointです。`/ws/host` へのWebSocket接続ではランダムな部屋IDを作成し、`/ws/client?room=<roomId>` へのWebSocket接続では指定された部屋IDを使います。どちらも `env.ROOMS.idFromName(roomId)` で同じ Durable Object に転送します。
 
-Technologies: Bun, TypeScript, WebSocket, `qrcode`
+Technologies: Cloudflare Workers, Wrangler, TypeScript, WebSocket
 
 ### 3.3. Room Management
 
-Name: Fixed single-room peer registry
+Name: Durable Object room registry
 
-Description: `server/src/rooms.ts` がランダムな部屋IDごとにホスト1台と複数参加者を管理します。ホストが部屋を作成すると参加者URLとQRコードが発行され、参加者は共有URLの `room` パラメータで対象部屋へ自動参加します。参加者が接続するとホストへ `client_joined` を通知し、以後の `offer`、`answer`、`ice` を同じ部屋内の宛先へ転送します。部屋一覧や参加者による部屋検索はありません。
+Description: `server/src/room.ts` の `RoomDurableObject` が部屋IDごとにホスト1台と複数参加者を管理します。ホストが部屋を作成すると参加者URLが発行され、参加者は共有URLの `room` パラメータで対象部屋へ自動参加します。参加者が接続するとホストへ `client_joined` を通知し、以後の `offer`、`answer`、`ice` を同じ部屋内の宛先へ転送します。部屋一覧や参加者による部屋検索はありません。
 
-Technologies: Bun WebSocket, TypeScript
+Technologies: Durable Objects, WebSocket Hibernation API, TypeScript
 
 ### 3.4. Host Application
 
@@ -134,7 +139,7 @@ Technologies: WebRTC DataChannel, `performance.timeOrigin`, `performance.now`
 
 Name: Shared protocol types
 
-Description: `shared/types.ts` に、シグナリング、制御メッセージ、同期メッセージ、メトロノーム設定の型を集約します。frontend と server の両方が同じプロトコル型を参照し、将来のCloudflare分離時にも境界を保ちます。
+Description: `shared/types.ts` に、シグナリング、制御メッセージ、同期メッセージ、メトロノーム設定の型を集約します。frontend と server の両方が同じプロトコル型を参照します。serverのWorker runtime型は `server/wrangler.jsonc` から `wrangler types` で生成した `server/worker-configuration.d.ts` を使います。
 
 Technologies: TypeScript
 
@@ -147,12 +152,18 @@ bun install
 bun run dev
 ```
 
-ローカル起動後、ホスト画面は `http://localhost:3000/host/` で開きます。同一LAN内のスマホや別PCからは、ホスト画面で部屋を作成した後に表示される `http://<LAN IP>:3000/client/?room=<roomId>` またはQRコードを使って参加します。
+ローカル起動後、ホスト画面は同一PCでは `http://localhost:3000/host/` で開きます。同一LAN内のスマホや別PCから参加する場合は、ホスト画面も `http://<LAN IP>:3000/host/` で開き、表示される `http://<LAN IP>:3000/client/?room=<roomId>` またはQRコードを使って参加します。
 
 Testing:
 
 ```bash
 bun run typecheck
+```
+
+`server/wrangler.jsonc` を変更した場合は、Wranglerの生成型も更新します。
+
+```bash
+bun run --cwd server types
 ```
 
 現時点では自動テストはありません。動作確認は、同一PCの複数ブラウザタブまたは同一Wi-Fi内の複数端末で、部屋作成、共有URL/QRからの自動参加、Enable Audio、Start、Stop、途中参加、RTT/offset/jitter表示、発声補正を確認します。
@@ -161,19 +172,19 @@ bun run typecheck
 
 - WebRTC接続状態やDataChannel状態の診断表示を増やす。
 - マイク測定による実発声音のズレ補正を検討する。
-- 部屋の永続化やホスト再接続が必要な場合は、`rooms.ts` のインメモリ部屋管理を拡張する。
-- HTTPS配信や証明書対応が必要な環境では、BunサーバのTLS設定を追加する。
+- 部屋の永続化やホスト再接続が必要な場合は、Durable Object storageの利用を検討する。
+- frontendをCloudflare PagesまたはWorkers Assetsへ移す。
 - 型チェックに加えて、時計同期ロジックやメッセージ処理の単体テストを追加する。
 
 ## 6. Project Identification
 
 Project Name: P2P同期メトロノーム
 
-Runtime: Bun
+Runtime: Bun scripts, Vite frontend, Cloudflare Workers server
 
 Primary Language: TypeScript
 
-Date of Last Update: 2026-05-18
+Date of Last Update: 2026-05-27
 
 ## 7. Glossary / Acronyms
 

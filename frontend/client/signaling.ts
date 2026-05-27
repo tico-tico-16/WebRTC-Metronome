@@ -2,6 +2,15 @@ import type { SignalMessage } from "../../shared/types.ts";
 
 type Listener = (message: SignalMessage) => void;
 
+function signalingBaseUrl(): string {
+  const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
+  const configuredUrl = env?.VITE_SIGNALING_BASE_URL?.replace(/\/$/, "");
+  if (configuredUrl) return configuredUrl;
+
+  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${location.hostname}:3001/ws`;
+}
+
 export class SignalingClient {
   private socket: WebSocket | null = null;
   private listeners = new Set<Listener>();
@@ -14,8 +23,8 @@ export class SignalingClient {
       return;
     }
 
-    const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-    this.socket = new WebSocket(`${protocol}//${location.hostname}:3001/ws`);
+    const url = `${signalingBaseUrl()}/client?room=${encodeURIComponent(roomId)}`;
+    this.socket = new WebSocket(url);
 
     this.socket.addEventListener("open", () => {
       this.send({ type: "register", role: "client", roomId, name });
