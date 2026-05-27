@@ -7,6 +7,8 @@
     "dev": "bun run --workspaces --parallel dev",
     "dev:frontend": "bun run --cwd frontend dev",
     "dev:server": "bun run --cwd server dev",
+    "build:frontend": "bun run --cwd frontend build",
+    "deploy:server": "bun run --cwd server deploy",
     "typecheck": "bun run --workspaces --sequential typecheck"
   },
   "devDependencies": {

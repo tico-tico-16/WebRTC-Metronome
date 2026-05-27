@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "wrangler dev --config wrangler.jsonc --ip 0.0.0.0 --port 3001",
+    "deploy": "wrangler deploy --config wrangler.jsonc",
     "types": "wrangler types --config wrangler.jsonc worker-configuration.d.ts",
     "typecheck": "bunx tsc --noEmit -p tsconfig.json"
   }
