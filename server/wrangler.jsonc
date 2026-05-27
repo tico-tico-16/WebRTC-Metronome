@@ -1,8 +1,14 @@
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
-  "name": "p2pmetronom-signaling",
+  "name": "p2pmetronome-signaling",
   "main": "src/index.ts",
   "compatibility_date": "2026-05-27",
+  "routes": [
+    {
+      "pattern": "metronome-signal.tico-tico.com",
+      "custom_domain": true
+    }
+  ],
   "durable_objects": {
     "bindings": [
       {

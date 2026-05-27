@@ -1,5 +1,5 @@
 {
-  "name": "p2pmetronom-server",
+  "name": "p2pmetronome-server",
   "type": "module",
   "private": true,
   "scripts": {
