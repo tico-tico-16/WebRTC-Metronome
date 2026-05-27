@@ -3,6 +3,8 @@
 Bun + TypeScript + WebRTC DataChannelで動く、同一Wi-Fi向けのP2P同期メトロノームです。
 frontendはViteで画面配信、serverはCloudflare Workers + Durable ObjectsでWebRTCシグナリングだけを担当し、同期制御データはホストと参加者のブラウザ間で直接送ります。
 
+[https://metronome.tico-tico.com/host/]
+
 ## Structure
 
 - `frontend/`: ホスト画面と参加者画面のブラウザコード、Vite配信
