@@ -1,4 +1,5 @@
 import type { ControlMessage, MetronomeConfig, SignalMessage, SyncMessage } from "../../shared/types.ts";
+import { RTC_CONFIGURATION } from "../shared/webrtcConfig.ts";
 import { createHostSyncHandler } from "./clockSync.ts";
 
 export type HostPeer = {
@@ -39,7 +40,7 @@ export class HostWebRTC {
   async addClient(clientId: string, name: string): Promise<void> {
     if (this.peers.has(clientId)) return;
 
-    const pc = new RTCPeerConnection({ iceServers: [] });
+    const pc = new RTCPeerConnection(RTC_CONFIGURATION);
     const control = pc.createDataChannel("control", { ordered: true });
     const sync = pc.createDataChannel("sync", { ordered: false, maxRetransmits: 0 });
     const peer: HostPeer = { id: clientId, name, pc, control, sync, status: "connecting", rtt: null, offset: null, jitter: null };

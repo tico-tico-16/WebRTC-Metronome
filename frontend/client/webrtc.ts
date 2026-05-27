@@ -1,4 +1,5 @@
 import type { ControlMessage, SignalMessage, SyncMessage } from "../../shared/types.ts";
+import { RTC_CONFIGURATION } from "../shared/webrtcConfig.ts";
 
 type SendSignal = (message: SignalMessage) => void;
 type ControlListener = (message: ControlMessage) => void;
@@ -46,7 +47,7 @@ export class ClientWebRTC {
 
   private async acceptOffer(message: Extract<SignalMessage, { type: "offer" }>): Promise<void> {
     this.pc?.close();
-    const pc = new RTCPeerConnection({ iceServers: [] });
+    const pc = new RTCPeerConnection(RTC_CONFIGURATION);
     this.pc = pc;
 
     pc.addEventListener("icecandidate", (event) => {
