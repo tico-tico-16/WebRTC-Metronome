@@ -4,12 +4,27 @@ import { nowSeconds } from "./clockSync.ts";
 type ScheduledBeat = {
   hostTime: number;
   beatIndex: number;
-  beatsPerBar: number;
+  beatInBar: number;
   secondsPerBeat: number;
 };
 
 export function secondsPerBeat(config: MetronomeConfig): number {
   return 60 / config.bpm;
+}
+
+function beatInBarForIndex(beatIndex: number, beatsPerBar: number): number {
+  return beatsPerBar > 0 ? (beatIndex % beatsPerBar) + 1 : 0;
+}
+
+function advanceBeatInBar(beatInBar: number, beatsPerBar: number): number {
+  if (beatsPerBar <= 0) return 0;
+  const nextBeat = beatInBar + 1;
+  return nextBeat > beatsPerBar ? 1 : nextBeat;
+}
+
+function clampBeatInBar(beatInBar: number, beatsPerBar: number): number {
+  if (beatsPerBar <= 0) return 0;
+  return beatInBar > 0 && beatInBar <= beatsPerBar ? beatInBar : 1;
 }
 
 export function beatAtHostTime(hostTime: number, startHostTime: number | null, config: MetronomeConfig): BeatInfo {
@@ -30,6 +45,7 @@ export class MetronomeScheduler {
   private context: AudioContext | null = null;
   private timer: number | null = null;
   private nextBeatIndex = 0;
+  private nextBeatInBar = 1;
   private nextBeatHostTime: number | null = null;
   private config: MetronomeConfig = { bpm: 120, beatsPerBar: 4, beatUnit: 4 };
   private startHostTime: number | null = null;
@@ -55,6 +71,7 @@ export class MetronomeScheduler {
 
     const beatLength = secondsPerBeat(config);
     this.nextBeatIndex = Math.max(0, Math.ceil((hostNow - startHostTime) / beatLength));
+    this.nextBeatInBar = beatInBarForIndex(this.nextBeatIndex, config.beatsPerBar);
     this.nextBeatHostTime = startHostTime + this.nextBeatIndex * beatLength;
     this.scheduledBeats = [];
     this.stopTimer();
@@ -64,6 +81,7 @@ export class MetronomeScheduler {
 
   updateConfig(config: MetronomeConfig): void {
     this.config = config;
+    this.nextBeatInBar = clampBeatInBar(this.nextBeatInBar, config.beatsPerBar);
   }
 
   setOutputOffsetMs(offsetMs: number): void {
@@ -72,6 +90,7 @@ export class MetronomeScheduler {
 
   stop(): void {
     this.startHostTime = null;
+    this.nextBeatInBar = 1;
     this.nextBeatHostTime = null;
     this.scheduledBeats = [];
     this.stopTimer();
@@ -87,7 +106,7 @@ export class MetronomeScheduler {
 
     return {
       beatIndex: current.beatIndex,
-      beatInBar: current.beatsPerBar > 0 ? (current.beatIndex % current.beatsPerBar) + 1 : 0,
+      beatInBar: current.beatInBar,
       secondsPerBeat: current.secondsPerBeat,
     };
   }
@@ -106,16 +125,17 @@ export class MetronomeScheduler {
 
       if (audioTime > audioNow + lookAhead) break;
       if (audioTime >= audioNow - 0.02) {
-        this.click(audioTime, this.config.beatsPerBar > 0 && this.nextBeatIndex % this.config.beatsPerBar === 0);
+        this.click(audioTime, this.nextBeatInBar === 1);
         this.scheduledBeats.push({
           hostTime: beatHostTime,
           beatIndex: this.nextBeatIndex,
-          beatsPerBar: this.config.beatsPerBar,
+          beatInBar: this.nextBeatInBar,
           secondsPerBeat: secondsPerBeat(this.config),
         });
         if (this.scheduledBeats.length > 64) this.scheduledBeats.shift();
       }
       this.nextBeatIndex += 1;
+      this.nextBeatInBar = advanceBeatInBar(this.nextBeatInBar, this.config.beatsPerBar);
       this.nextBeatHostTime += secondsPerBeat(this.config);
     }
   }

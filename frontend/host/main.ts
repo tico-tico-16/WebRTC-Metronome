@@ -53,7 +53,7 @@ const webRTC = new HostWebRTC(
   () => ({
     isPlaying,
     config: readConfig(),
-    startHostTime,
+    startHostTime: isPlaying ? scheduler.nextStrongBeatHostTime(nowSeconds()) ?? startHostTime : startHostTime,
     sentHostTime: nowSeconds(),
   }),
 );

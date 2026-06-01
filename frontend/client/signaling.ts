@@ -1,6 +1,7 @@
 import type { SignalMessage } from "../../shared/types.ts";
 
 type Listener = (message: SignalMessage) => void;
+type CloseListener = () => void;
 
 function signalingBaseUrl(): string {
   const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
@@ -14,6 +15,7 @@ function signalingBaseUrl(): string {
 export class SignalingClient {
   private socket: WebSocket | null = null;
   private listeners = new Set<Listener>();
+  private closeListeners = new Set<CloseListener>();
 
   connect(roomId: string, name: string): void {
     if (
@@ -37,11 +39,16 @@ export class SignalingClient {
 
     this.socket.addEventListener("close", () => {
       this.socket = null;
+      for (const listener of this.closeListeners) listener();
     });
   }
 
   onMessage(listener: Listener): void {
     this.listeners.add(listener);
+  }
+
+  onClose(listener: CloseListener): void {
+    this.closeListeners.add(listener);
   }
 
   send(message: SignalMessage): void {

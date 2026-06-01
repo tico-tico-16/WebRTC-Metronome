@@ -66,6 +66,18 @@ function applyConfig(message: MetronomeConfig): void {
   };
 }
 
+function stopPlayback(): void {
+  isPlaying = false;
+  startHostTime = null;
+  pendingStart = false;
+  scheduler.stop();
+}
+
+function handleHostDisconnected(): void {
+  stopPlayback();
+  clockSync.stop();
+}
+
 function startWhenStable(): void {
   if (!pendingStart || !isPlaying || startHostTime === null || !clockSync.stats.stable) return;
 
@@ -91,10 +103,7 @@ function handleControl(message: ControlMessage): void {
   }
 
   if (message.type === "stop") {
-    isPlaying = false;
-    startHostTime = null;
-    pendingStart = false;
-    scheduler.stop();
+    stopPlayback();
     render();
     return;
   }
@@ -130,6 +139,11 @@ signaling.onMessage((message: SignalMessage) => {
 
   if (message.type === "host_available") {
     connectionStatus.textContent = message.hostPresent ? "Host available" : "Waiting for host";
+    if (!message.hostPresent) {
+      handleHostDisconnected();
+      peerState = "disconnected";
+      render();
+    }
     return;
   }
 
@@ -149,6 +163,17 @@ webRTC.onState((state) => {
   if (state === "sync open") {
     clockSync.start();
   }
+  if (state === "disconnected" || state === "failed" || state === "closed") {
+    handleHostDisconnected();
+  }
+  render();
+});
+
+signaling.onClose(() => {
+  handleHostDisconnected();
+  peerState = "disconnected";
+  connectionStatus.textContent = "Signaling disconnected";
+  render();
 });
 
 webRTC.onControl(handleControl);
