@@ -1,6 +1,13 @@
 import type { BeatInfo, MetronomeConfig } from "../../shared/types.ts";
 import { nowSeconds } from "./clockSync.ts";
 
+type ScheduledBeat = {
+  hostTime: number;
+  beatIndex: number;
+  beatsPerBar: number;
+  secondsPerBeat: number;
+};
+
 export function secondsPerBeat(config: MetronomeConfig): number {
   return 60 / config.bpm;
 }
@@ -23,9 +30,11 @@ export class MetronomeScheduler {
   private context: AudioContext | null = null;
   private timer: number | null = null;
   private nextBeatIndex = 0;
+  private nextBeatHostTime: number | null = null;
   private config: MetronomeConfig = { bpm: 120, beatsPerBar: 4, beatUnit: 4 };
   private startHostTime: number | null = null;
   private hostToLocalTime: (hostTime: number) => number = (hostTime) => hostTime;
+  private scheduledBeats: ScheduledBeat[] = [];
   private audioEnabled = false;
   private outputOffsetSeconds = 0;
 
@@ -46,9 +55,15 @@ export class MetronomeScheduler {
 
     const beatLength = secondsPerBeat(config);
     this.nextBeatIndex = Math.max(0, Math.ceil((hostNow - startHostTime) / beatLength));
+    this.nextBeatHostTime = startHostTime + this.nextBeatIndex * beatLength;
+    this.scheduledBeats = [];
     this.stopTimer();
     this.timer = window.setInterval(() => this.scheduleAhead(), 25);
     this.scheduleAhead();
+  }
+
+  updateConfig(config: MetronomeConfig): void {
+    this.config = config;
   }
 
   setOutputOffsetMs(offsetMs: number): void {
@@ -57,27 +72,51 @@ export class MetronomeScheduler {
 
   stop(): void {
     this.startHostTime = null;
+    this.nextBeatHostTime = null;
+    this.scheduledBeats = [];
     this.stopTimer();
   }
 
-  private scheduleAhead(): void {
-    if (!this.isAudioEnabled() || !this.context || this.startHostTime === null) return;
+  beatAtHostTime(hostTime: number): BeatInfo | null {
+    let current: ScheduledBeat | null = null;
+    for (const beat of this.scheduledBeats) {
+      if (beat.hostTime <= hostTime) current = beat;
+    }
 
-    const beatLength = secondsPerBeat(this.config);
+    if (!current) return null;
+
+    return {
+      beatIndex: current.beatIndex,
+      beatInBar: current.beatsPerBar > 0 ? (current.beatIndex % current.beatsPerBar) + 1 : 0,
+      secondsPerBeat: current.secondsPerBeat,
+    };
+  }
+
+  private scheduleAhead(): void {
+    if (!this.isAudioEnabled() || !this.context || this.startHostTime === null || this.nextBeatHostTime === null) return;
+
     const audioNow = this.context.currentTime;
     const localNow = nowSeconds();
     const lookAhead = 0.18;
 
     while (true) {
-      const beatHostTime = this.startHostTime + this.nextBeatIndex * beatLength;
+      const beatHostTime = this.nextBeatHostTime;
       const beatLocalTime = this.hostToLocalTime(beatHostTime);
       const audioTime = audioNow + (beatLocalTime - localNow) + this.outputOffsetSeconds;
 
       if (audioTime > audioNow + lookAhead) break;
       if (audioTime >= audioNow - 0.02) {
         this.click(audioTime, this.config.beatsPerBar > 0 && this.nextBeatIndex % this.config.beatsPerBar === 0);
+        this.scheduledBeats.push({
+          hostTime: beatHostTime,
+          beatIndex: this.nextBeatIndex,
+          beatsPerBar: this.config.beatsPerBar,
+          secondsPerBeat: secondsPerBeat(this.config),
+        });
+        if (this.scheduledBeats.length > 64) this.scheduledBeats.shift();
       }
       this.nextBeatIndex += 1;
+      this.nextBeatHostTime += secondsPerBeat(this.config);
     }
   }
 

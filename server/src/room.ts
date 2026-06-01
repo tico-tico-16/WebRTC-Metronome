@@ -43,6 +43,10 @@ function writeAttachment(socket: PeerSocket, attachment: WebSocketAttachment): v
   socket.serializeAttachment(attachment);
 }
 
+function logRoomEvent(event: string, details: Record<string, unknown>): void {
+  console.log(JSON.stringify({ event, ...details }));
+}
+
 export class RoomDurableObject extends DurableObject {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -54,10 +58,12 @@ export class RoomDurableObject extends DurableObject {
     const roomId = url.searchParams.get("room")?.trim() ?? "";
 
     if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
+      logRoomEvent("room_connect_rejected", { role, roomId, status: 400, reason: "missing_websocket_upgrade" });
       return new Response("Expected WebSocket upgrade.", { status: 400 });
     }
 
     if ((role !== "host" && role !== "client") || !roomId) {
+      logRoomEvent("room_connect_rejected", { role, roomId, status: 400, reason: "missing_registration_data" });
       return new Response("Missing room registration data.", { status: 400 });
     }
 
@@ -71,6 +77,7 @@ export class RoomDurableObject extends DurableObject {
       frontendOrigin: url.searchParams.get("frontendOrigin") ?? "",
     });
     this.ctx.acceptWebSocket(server);
+    logRoomEvent("room_socket_accepted", { role, roomId });
 
     return new Response(null, {
       status: 101,
@@ -81,17 +88,29 @@ export class RoomDurableObject extends DurableObject {
   override async webSocketMessage(socket: PeerSocket, raw: string | ArrayBuffer): Promise<void> {
     try {
       const message = JSON.parse(String(raw)) as SignalMessage;
+      const attachment = readAttachment(socket);
+      logRoomEvent("signal_received", {
+        roomId: attachment?.roomId,
+        peerId: attachment?.id,
+        role: attachment?.role,
+        type: message.type,
+      });
       await this.routeSignal(socket, message);
     } catch (error) {
+      logRoomEvent("signal_invalid", { error: String(error) });
       send(socket, { type: "error", message: `Invalid signaling message: ${error}` });
     }
   }
 
   override webSocketClose(socket: PeerSocket): void {
+    const attachment = readAttachment(socket);
+    logRoomEvent("socket_closed", { roomId: attachment?.roomId, peerId: attachment?.id, role: attachment?.role });
     this.removePeer(socket);
   }
 
   override webSocketError(socket: PeerSocket): void {
+    const attachment = readAttachment(socket);
+    logRoomEvent("socket_error", { roomId: attachment?.roomId, peerId: attachment?.id, role: attachment?.role });
     this.removePeer(socket);
   }
 
@@ -123,12 +142,14 @@ export class RoomDurableObject extends DurableObject {
 
     const attachment = readAttachment(socket);
     if (!attachment?.id || attachment.name === "unregistered") {
+      logRoomEvent("signal_rejected", { roomId: attachment?.roomId, peerId: attachment?.id, reason: "unregistered" });
       send(socket, { type: "error", message: "Register before sending signaling messages." });
       return;
     }
 
     const peers = this.getPeers();
     if (!peers.host) {
+      logRoomEvent("signal_rejected", { roomId: attachment.roomId, peerId: attachment.id, reason: "room_closed" });
       send(socket, { type: "error", message: "Room is closed." });
       return;
     }
@@ -139,22 +160,37 @@ export class RoomDurableObject extends DurableObject {
         : peers.clients.get(message.to);
 
       if (!target || target.readyState !== WebSocket.OPEN) {
+        logRoomEvent("signal_rejected", {
+          roomId: attachment.roomId,
+          peerId: attachment.id,
+          target: message.to,
+          type: message.type,
+          reason: "target_not_connected",
+        });
         send(socket, { type: "error", message: `Target ${message.to} is not connected.` });
         return;
       }
 
       send(target, { ...message, from: attachment.id });
+      logRoomEvent("signal_forwarded", {
+        roomId: attachment.roomId,
+        from: attachment.id,
+        to: message.to,
+        type: message.type,
+      });
     }
   }
 
   private registerPeer(socket: PeerSocket, message: Extract<SignalMessage, { type: "register" }>): void {
     const attachment = readAttachment(socket);
     if (!attachment) {
+      logRoomEvent("register_rejected", { reason: "missing_metadata" });
       closeWithError(socket, "Missing WebSocket metadata.");
       return;
     }
 
     if (attachment.role !== message.role) {
+      logRoomEvent("register_rejected", { roomId: attachment.roomId, role: message.role, reason: "role_mismatch" });
       closeWithError(socket, "WebSocket role does not match registration role.");
       return;
     }
@@ -170,6 +206,7 @@ export class RoomDurableObject extends DurableObject {
   private registerHost(socket: PeerSocket, attachment: WebSocketAttachment, name?: string): void {
     const peers = this.getPeers();
     if (peers.host && peers.host !== socket) {
+      logRoomEvent("register_rejected", { roomId: attachment.roomId, role: "host", reason: "host_exists" });
       closeWithError(socket, "Room already has a host.");
       return;
     }
@@ -180,6 +217,7 @@ export class RoomDurableObject extends DurableObject {
       name: name?.trim() || "Host",
     };
     writeAttachment(socket, registered);
+    logRoomEvent("host_registered", { roomId: registered.roomId, peerId: registered.id, name: registered.name });
 
     const participantUrl = this.createParticipantUrl(registered.roomId);
     send(socket, {
@@ -199,12 +237,19 @@ export class RoomDurableObject extends DurableObject {
     name?: string,
   ): void {
     if (!roomId || roomId !== attachment.roomId) {
+      logRoomEvent("register_rejected", {
+        roomId: attachment.roomId,
+        requestedRoomId: roomId,
+        role: "client",
+        reason: "room_mismatch",
+      });
       closeWithError(socket, "Open the participant URL shared by the host.");
       return;
     }
 
     const peers = this.getPeers();
     if (!peers.host) {
+      logRoomEvent("register_rejected", { roomId: attachment.roomId, role: "client", reason: "host_missing" });
       closeWithError(socket, "Room not found or already closed.");
       return;
     }
@@ -216,6 +261,7 @@ export class RoomDurableObject extends DurableObject {
       name: name?.trim() || id,
     };
     writeAttachment(socket, registered);
+    logRoomEvent("client_registered", { roomId: registered.roomId, peerId: registered.id, name: registered.name });
 
     send(socket, {
       type: "registered",
@@ -238,6 +284,7 @@ export class RoomDurableObject extends DurableObject {
 
     const peers = this.getPeers();
     if (attachment.role === "host") {
+      logRoomEvent("host_removed", { roomId: attachment.roomId, peerId: attachment.id, clientCount: peers.clients.size });
       for (const client of peers.clients.values()) {
         send(client, { type: "host_available", hostPresent: false });
         client.close();
@@ -246,6 +293,7 @@ export class RoomDurableObject extends DurableObject {
     }
 
     if (attachment.role === "client" && peers.host) {
+      logRoomEvent("client_removed", { roomId: attachment.roomId, peerId: attachment.id });
       send(peers.host, { type: "client_left", clientId: attachment.id });
     }
   }

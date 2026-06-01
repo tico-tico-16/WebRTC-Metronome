@@ -40,7 +40,8 @@ function render(): void {
   jitterValue.textContent = clockSync.stats.jitter === null ? "--" : `${(clockSync.stats.jitter * 1000).toFixed(1)}ms`;
 
   if (isPlaying && startHostTime !== null) {
-    const beat = beatAtHostTime(clockSync.hostNow(), startHostTime, config);
+    const hostNow = clockSync.hostNow();
+    const beat = scheduler.beatAtHostTime(hostNow) ?? beatAtHostTime(hostNow, startHostTime, config);
     beatValue.textContent = String(beat.beatInBar);
   } else {
     beatValue.textContent = "--";
@@ -82,6 +83,9 @@ function startWhenStable(): void {
 function handleControl(message: ControlMessage): void {
   if (message.type === "config") {
     applyConfig(message);
+    if (isPlaying) {
+      scheduler.updateConfig(config);
+    }
     render();
     return;
   }

@@ -31,25 +31,39 @@ function badRequest(message: string): Response {
   return new Response(message, { status: 400 });
 }
 
+function logServerEvent(event: string, details: Record<string, unknown>): void {
+  console.log(JSON.stringify({ event, ...details }));
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    logServerEvent("request", {
+      method: request.method,
+      path: url.pathname,
+      search: url.search,
+      upgrade: getWebSocketUpgrade(request),
+    });
 
     if (!url.pathname.startsWith("/ws")) {
+      logServerEvent("request_rejected", { path: url.pathname, status: 404, reason: "not_ws_path" });
       return new Response("Signaling server. Connect to /ws/host or /ws/client?room=<roomId>.", { status: 404 });
     }
 
     if (getWebSocketUpgrade(request) !== "websocket") {
+      logServerEvent("request_rejected", { path: url.pathname, status: 400, reason: "missing_websocket_upgrade" });
       return badRequest("Expected WebSocket upgrade.");
     }
 
     const role = url.pathname === "/ws/host" ? "host" : url.pathname === "/ws/client" ? "client" : null;
     if (!role) {
+      logServerEvent("request_rejected", { path: url.pathname, status: 400, reason: "unknown_ws_path" });
       return badRequest("Connect to /ws/host or /ws/client?room=<roomId>.");
     }
 
     const roomId = role === "host" ? makeRoomId() : url.searchParams.get("room")?.trim();
     if (!roomId) {
+      logServerEvent("request_rejected", { path: url.pathname, role, status: 400, reason: "missing_room_id" });
       return badRequest("Missing room id.");
     }
 
@@ -61,6 +75,7 @@ export default {
     durableObjectUrl.searchParams.set("frontendOrigin", getFrontendOrigin(request));
 
     const roomObject = env.ROOMS.get(env.ROOMS.idFromName(roomId));
+    logServerEvent("room_connect_forwarded", { role, roomId });
     return roomObject.fetch(new Request(durableObjectUrl, request));
   },
 };

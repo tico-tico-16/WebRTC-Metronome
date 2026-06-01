@@ -40,8 +40,8 @@ function readConfig(): MetronomeConfig {
 
 function setPlaying(nextPlaying: boolean): void {
   isPlaying = nextPlaying;
-  bpmInput.disabled = nextPlaying || !hasRoom;
-  beatInput.disabled = nextPlaying || !hasRoom;
+  bpmInput.disabled = !hasRoom;
+  beatInput.disabled = !hasRoom;
   outputOffsetInput.disabled = !hasRoom;
   startButton.disabled = nextPlaying || !hasRoom;
   stopButton.disabled = !nextPlaying || !hasRoom;
@@ -146,13 +146,14 @@ stopButton.addEventListener("click", () => {
   webRTC.broadcastControl({ type: "stop", sentHostTime: latestSentHostTime });
 });
 
-function broadcastConfigWhenStopped(): void {
-  if (isPlaying) return;
-  webRTC.broadcastControl({ type: "config", ...readConfig() });
+function broadcastConfig(): void {
+  const config = readConfig();
+  scheduler.updateConfig(config);
+  webRTC.broadcastControl({ type: "config", ...config });
 }
 
-bpmInput.addEventListener("change", broadcastConfigWhenStopped);
-beatInput.addEventListener("change", broadcastConfigWhenStopped);
+bpmInput.addEventListener("change", broadcastConfig);
+beatInput.addEventListener("change", broadcastConfig);
 outputOffsetInput.addEventListener("input", () => {
   scheduler.setOutputOffsetMs(readOutputOffsetMs());
 });
@@ -165,7 +166,7 @@ createRoomButton.addEventListener("click", () => {
 
 setInterval(() => {
   if (!isPlaying) return;
-  const beat = beatAtHostTime(nowSeconds(), startHostTime, readConfig());
+  const beat = scheduler.beatAtHostTime(nowSeconds()) ?? beatAtHostTime(nowSeconds(), startHostTime, readConfig());
   connectionStatus.textContent = `Playing beat ${beat.beatInBar}`;
 }, 100);
 

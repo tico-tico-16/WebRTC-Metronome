@@ -4,7 +4,8 @@
   "private": true,
   "workspaces": ["frontend", "server"],
   "scripts": {
-    "dev": "bun run --workspaces --parallel dev",
+    "dev": "bun run scripts/dev.ts",
+    "dev:info": "bun run scripts/dev.ts --info",
     "dev:frontend": "bun run --cwd frontend dev",
     "dev:server": "bun run --cwd server dev",
     "build:frontend": "bun run --cwd frontend build",
