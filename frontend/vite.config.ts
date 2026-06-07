@@ -6,6 +6,7 @@ export default defineConfig({
     outDir: "dist",
     rollupOptions: {
       input: {
+        index: "index.html",
         host: "host/index.html",
         client: "client/index.html",
       },
