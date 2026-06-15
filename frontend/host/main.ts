@@ -18,6 +18,8 @@ const participantQr = document.querySelector<HTMLElement>("#participantQr")!;
 const participantCount = document.querySelector<HTMLElement>("#participantCount")!;
 const participantList = document.querySelector<HTMLUListElement>("#participantList")!;
 
+const autoCreateRoomStorageKey = "p2p-metronome:auto-create-room";
+
 let isPlaying = false;
 let hasRoom = false;
 let startHostTime: number | null = null;
@@ -158,11 +160,15 @@ outputOffsetInput.addEventListener("input", () => {
   scheduler.setOutputOffsetMs(readOutputOffsetMs());
 });
 
-createRoomButton.addEventListener("click", () => {
+function createRoom(): void {
+  if (hasRoom || createRoomButton.disabled) return;
+
   createRoomButton.disabled = true;
   connectionStatus.textContent = "Creating room...";
   signaling.connect();
-});
+}
+
+createRoomButton.addEventListener("click", createRoom);
 
 setInterval(() => {
   if (!isPlaying) return;
@@ -171,3 +177,11 @@ setInterval(() => {
 }, 100);
 
 setPlaying(false);
+
+try {
+  const shouldAutoCreateRoom = sessionStorage.getItem(autoCreateRoomStorageKey) === "1";
+  sessionStorage.removeItem(autoCreateRoomStorageKey);
+  if (shouldAutoCreateRoom) createRoom();
+} catch {
+  // The manual room creation button remains available when storage is inaccessible.
+}

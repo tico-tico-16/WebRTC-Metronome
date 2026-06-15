@@ -14,7 +14,7 @@
         <p class="description">
           複数の端末でタイミングを同期しながら、同じテンポのメトロノームを再生できます。
         </p>
-        <a class="start-link" href="/host/">ホストとして開始</a>
+        <a id="startHostLink" class="start-link" href="/host/">ホストとして開始</a>
       </section>
 
       <section class="panel participant-guide">
@@ -24,5 +24,21 @@
         </p>
       </section>
     </main>
+
+    <script>
+      const startHostLink = document.querySelector("#startHostLink");
+
+      startHostLink.addEventListener("click", (event) => {
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+          return;
+        }
+
+        try {
+          sessionStorage.setItem("p2p-metronome:auto-create-room", "1");
+        } catch {
+          // The host page remains usable with its manual room creation button.
+        }
+      });
+    </script>
   </body>
 </html>
