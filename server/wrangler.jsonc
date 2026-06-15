@@ -22,5 +22,14 @@
       "tag": "v1",
       "new_sqlite_classes": ["RoomDurableObject"]
     }
-  ]
+  ],
+  "observability": {
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true
+    },
+    "traces": {
+      "enabled": true
+    }
+  }
 }
