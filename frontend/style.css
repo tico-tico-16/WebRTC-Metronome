@@ -18,7 +18,7 @@ body {
 .shell {
   display: grid;
   gap: 20px;
-  width: min(900px, calc(100% - 32px));
+  width: min(1040px, calc(100% - 32px));
   margin: 0 auto;
   padding: 32px 0;
 }
@@ -32,7 +32,6 @@ body {
 }
 
 .hero {
-  padding-block: clamp(32px, 8vw, 72px);
   background: #fff;
 }
 
@@ -51,10 +50,9 @@ p {
 }
 
 h1 {
-  max-width: 760px;
-  margin-bottom: 16px;
-  font-size: clamp(2.2rem, 8vw, 4.6rem);
-  line-height: 0.98;
+  margin-bottom: 8px;
+  font-size: clamp(2rem, 6vw, 4.6rem);
+  line-height: 0.96;
 }
 
 h2 {
@@ -98,14 +96,6 @@ h2 {
 }
 
 @media (max-width: 560px) {
-  .shell {
-    padding: 16px 0;
-  }
-
-  .panel {
-    padding: 20px;
-  }
-
   .start-link {
     width: 100%;
   }
