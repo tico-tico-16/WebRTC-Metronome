@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /client/
+
+Sitemap: https://metronome.tico-tico.com/sitemap.xml
