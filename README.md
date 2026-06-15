@@ -3,7 +3,7 @@
 Bun + TypeScript + WebRTC DataChannelで動く、P2P同期メトロノームです。無料公開STUNサーバーで一部のNAT越えを試行しますが、TURNサーバーは使わないため接続できないネットワークがあります。
 frontendはViteで画面配信、serverはCloudflare Workers + Durable ObjectsでWebRTCシグナリングだけを担当し、同期制御データはホストと参加者のブラウザ間で直接送ります。
 
-https://metronome.tico-tico.com/host/
+https://metronome.tico-tico.com
 
 ## Structure
 
@@ -43,4 +43,4 @@ bun run --cwd server types
 
 - Frontend: Cloudflare Pages
 - Signaling server: Cloudflare Workers + Durable Objects
-- Production URL: https://metronome.tico-tico.com/host/
+- Production URL: https://metronome.tico-tico.com
