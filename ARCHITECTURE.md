@@ -7,6 +7,8 @@
 ```text
 [Project Root]/
 ├── frontend/
+│   ├── index.html             # トップページ
+│   ├── style.css              # トップページのスタイル
 │   ├── host/
 │   │   ├── index.html         # ホスト画面
 │   │   ├── style.css          # ホスト画面のスタイル
@@ -14,15 +16,17 @@
 │   │   ├── signaling.ts       # ホスト側WebSocketシグナリング
 │   │   ├── webrtc.ts          # ホスト側WebRTC PeerConnection管理
 │   │   ├── clockSync.ts       # ホスト時刻とping/pong応答
-│   │   └── metronome.ts       # ホスト側クリック音生成と発声補正
+│   │   └── metronome.ts       # ホスト側クリック音生成、予約再生、発声補正
 │   ├── client/
-│       ├── index.html         # 参加者画面
-│       ├── style.css          # 参加者画面のスタイル
-│       ├── main.ts            # 参加者画面のUI制御
-│       ├── signaling.ts       # 参加者側WebSocketシグナリング
-│       ├── webrtc.ts          # 参加者側WebRTC PeerConnection管理
-│       ├── clockSync.ts       # 参加者側のRTT/offset/jitter推定
-│       └── metronome.ts       # 参加者側クリック音生成と発声補正
+│   │   ├── index.html         # 参加者画面
+│   │   ├── style.css          # 参加者画面のスタイル
+│   │   ├── main.ts            # 参加者画面のUI制御
+│   │   ├── signaling.ts       # 参加者側WebSocketシグナリング
+│   │   ├── webrtc.ts          # 参加者側WebRTC PeerConnection管理
+│   │   ├── clockSync.ts       # 参加者側のRTT/offset/jitter推定
+│   │   └── metronome.ts       # 参加者側クリック音生成、予約再生、発声補正
+│   ├── shared/
+│   │   └── webrtcConfig.ts    # ホスト・参加者共通のICEサーバー設定
 │   ├── package.json           # Vite配信、frontend build、QR生成依存
 │   ├── tsconfig.json          # frontend用TypeScript設定
 │   └── vite.config.ts         # ViteのMPA設定
@@ -33,9 +37,11 @@
 │   ├── package.json           # Wrangler実行スクリプト
 │   ├── tsconfig.json          # server用TypeScript設定
 │   ├── worker-configuration.d.ts # Wrangler生成のWorker型定義
-│   └── wrangler.jsonc         # Worker、Durable Object binding、migration設定
+│   └── wrangler.jsonc         # Worker、Durable Object、migration、observability設定
 ├── shared/
 │   └── types.ts               # frontend/server で使う共有型
+├── scripts/
+│   └── dev.ts                 # frontend/serverの一括起動と開発URL表示
 ├── README.md                  # セットアップと起動方法
 ├── package.json               # Bunスクリプトと依存関係
 ├── bun.lock                   # Bunロックファイル
@@ -67,6 +73,7 @@
         └────────────────────────┘
 
 Frontend static files are served separately by Vite:
+  /        -> frontend/index.html
   /host/   -> frontend/host/index.html
   /client/ -> frontend/client/index.html
 
@@ -75,7 +82,7 @@ Host Browser ── WebRTC DataChannel ── Participant Browser
           sync:    ping / pong / sync_report
 ```
 
-serverはWebRTC接続を成立させるためのシグナリングだけを中継します。frontendはViteでホスト画面と参加者画面を配信します。メトロノームのBPM、拍子、開始時刻、停止命令、同期レポートは、ホストブラウザと各参加者ブラウザのWebRTC DataChannelで直接送受信されます。音声データは送信せず、各端末がWeb Audio APIでクリック音を生成します。
+serverはWebRTC接続を成立させるためのシグナリングだけを中継します。frontendはViteでトップページ、ホスト画面、参加者画面を配信します。メトロノームのBPM、拍子、開始時刻、停止命令、同期レポートは、ホストブラウザと各参加者ブラウザのWebRTC DataChannelで直接送受信されます。音声データは送信せず、各端末がWeb Audio APIでクリック音を生成します。
 
 ## 3. Core Components
 
@@ -83,7 +90,7 @@ serverはWebRTC接続を成立させるためのシグナリングだけを中�
 
 Name: Vite frontend
 
-Description: `frontend/package.json` の `dev` は Vite を `--host 0.0.0.0 --port 3000 --strictPort` で起動し、`frontend/host/index.html` と `frontend/client/index.html` を配信します。TypeScript、CSS、HTML内のローカルアセット参照はViteが処理します。ホスト画面はサーバーから返された参加者URLをもとにQRコードを生成します。
+Description: `frontend/package.json` の `dev` は Vite を `--host 0.0.0.0 --port 3000 --strictPort` で起動します。ViteのMPA設定により、トップページ `/`、ホスト画面 `/host/`、参加者画面 `/client/` を配信します。TypeScript、CSS、HTML内のローカルアセット参照はViteが処理します。トップページからホスト画面へ移動でき、ホスト画面はサーバーから返された参加者URLをもとにQRコードを生成します。
 
 Technologies: Vite, TypeScript, HTML/CSS, `qrcode`
 
@@ -91,7 +98,7 @@ Technologies: Vite, TypeScript, HTML/CSS, `qrcode`
 
 Name: Cloudflare Worker signaling server
 
-Description: `server/src/index.ts` が Worker entrypointです。`/ws/host` へのWebSocket接続ではランダムな部屋IDを作成し、`/ws/client?room=<roomId>` へのWebSocket接続では指定された部屋IDを使います。どちらも `env.ROOMS.idFromName(roomId)` で同じ Durable Object に転送します。
+Description: `server/src/index.ts` が Worker entrypointです。`/ws/host` へのWebSocket接続ではランダムな部屋IDを作成し、`/ws/client?room=<roomId>` へのWebSocket接続では指定された部屋IDを使います。どちらも `env.ROOMS.idFromName(roomId)` で同じ Durable Object に転送します。リクエスト、登録、シグナリング転送、切断などをJSON形式で記録し、Wrangler設定でWorkers Logs、Invocation Logs、Workers Tracesを有効化しています。
 
 Technologies: Cloudflare Workers, Wrangler, TypeScript, WebSocket
 
@@ -107,7 +114,7 @@ Technologies: Durable Objects, WebSocket Hibernation API, TypeScript
 
 Name: Host browser app
 
-Description: ホストだけが部屋作成、BPM、拍子、Start、Stopを操作できます。部屋作成後に参加者一覧、RTT、offset、jitter、参加者URL、QRコードを表示します。各参加者に対して1つの `RTCPeerConnection` を作り、`control` と `sync` の2つのDataChannelを開きます。
+Description: ホストだけが部屋作成、BPM、拍子、Start、Stopを操作できます。BPMと拍子は再生中も変更でき、現在の拍位置を維持したまま以後の予約再生へ反映されます。端末固有の出力遅延を手動調整するため、-200msから200msの発声補正を設定できます。部屋作成後に参加者一覧、RTT、offset、jitter、参加者URL、QRコードを表示します。各参加者に対して1つの `RTCPeerConnection` を作り、`control` と `sync` の2つのDataChannelを開きます。
 
 Technologies: TypeScript, WebRTC, Web Audio API, HTML/CSS
 
@@ -115,7 +122,7 @@ Technologies: TypeScript, WebRTC, Web Audio API, HTML/CSS
 
 Name: Participant browser app
 
-Description: 参加者はホストから共有されたURLまたはQRコードで開くと自動参加し、Enable Audioだけを操作します。ホストから受け取った状態に従ってローカルでクリック音を予約再生します。`sync` DataChannel上のping/pongからRTT、offset、jitterを推定し、ホスト時刻をローカル時刻へ変換します。
+Description: 参加者はホストから共有されたURLまたはQRコードで開くと自動参加し、ブラウザの自動再生制限を解除するEnable Audioと、-200msから200msの手動発声補正を操作します。ホストから受け取った状態に従ってローカルでクリック音を予約再生します。`sync` DataChannel上のping/pongからRTT、offset、jitterを推定し、ホスト時刻をローカル時刻へ変換します。再生中に参加した場合は次の強拍を開始基準として受け取り、時計同期が安定し、かつ音声が有効になるまで再生開始を保留します。ホストまたはシグナリングとの接続が失われた場合は、再生と時計同期を停止します。
 
 Technologies: TypeScript, WebRTC, Web Audio API, HTML/CSS
 
@@ -123,7 +130,7 @@ Technologies: TypeScript, WebRTC, Web Audio API, HTML/CSS
 
 Name: Local Web Audio scheduler
 
-Description: ホスト・参加者のどちらも音声ファイルは使わず、`OscillatorNode` と `GainNode` でクリック音を生成します。1拍目は高い音、それ以外は低い音です。`setInterval` は直接発音には使わず、少し先のクリック音をWeb Audio APIへ予約します。
+Description: ホスト・参加者のどちらも音声ファイルは使わず、`OscillatorNode` と `GainNode` でクリック音を生成します。1拍目は高い音、それ以外は低い音です。25ms間隔のタイマーは直接発音には使わず、約180ms先までのクリック音をWeb Audio APIへ予約します。発声補正値は予約するAudioContext時刻へ加算されます。再生中にBPMや拍子を変更した場合は、次の拍位置を保持しながら新しい設定を以後の予約へ反映します。
 
 Technologies: Web Audio API
 
@@ -131,11 +138,19 @@ Technologies: Web Audio API
 
 Name: DataChannel ping/pong clock sync
 
-Description: 参加者は `sync` DataChannelでpingを送り、ホストからpongを受け取ってRTT、offset、jitterを推定します。RTTが小さいサンプルを優先してoffsetを平均化し、jitterが十分小さくなるまで `syncing...` と表示します。
+Description: 参加者は `sync` DataChannelで350msごとにpingを送り、ホストからpongを受け取ってRTT、offset、jitterを推定します。直近12サンプルを保持し、RTTが小さい5サンプルを優先してoffsetを平均化します。5サンプル以上かつjitterが25ms未満になるまで `syncing...` と表示し、同期が安定してから保留中の再生を開始します。
 
 Technologies: WebRTC DataChannel, `performance.timeOrigin`, `performance.now`
 
-### 3.8. Shared Types
+### 3.8. WebRTC Connectivity
+
+Name: Shared ICE configuration
+
+Description: ホストと参加者は `frontend/shared/webrtcConfig.ts` の共通 `RTCConfiguration` を使います。ICEサーバーには無料公開STUNサーバー `stun:stun.l.google.com:19302` を設定しています。TURNサーバーは設定していないため、対称NATやUDP制限などがあるネットワークではP2P接続を確立できない場合があります。
+
+Technologies: WebRTC, ICE, STUN
+
+### 3.9. Shared Types
 
 Name: Shared protocol types
 
@@ -152,7 +167,13 @@ bun install
 bun run dev
 ```
 
-ローカル起動後、ホスト画面は同一PCでは `http://localhost:3000/host/` で開きます。同一LAN内のスマホや別PCから参加する場合は、ホスト画面も `http://<LAN IP>:3000/host/` で開き、表示される `http://<LAN IP>:3000/client/?room=<roomId>` またはQRコードを使って参加します。
+ルートの `scripts/dev.ts` がViteとWranglerを子プロセスとして一括起動し、localhostと検出したLAN IPv4アドレスの開発URLを表示します。ローカル起動後、トップページは `http://localhost:3000/`、ホスト画面は `http://localhost:3000/host/` で開きます。同一LAN内のスマホや別PCから参加する場合は、ホスト画面も `http://<LAN IP>:3000/host/` で開き、表示される `http://<LAN IP>:3000/client/?room=<roomId>` またはQRコードを使って参加します。
+
+Production:
+
+- Frontend: Cloudflare Pages (`https://metronome.tico-tico.com/`)
+- Signaling server: Cloudflare Workers + Durable Objects (`metronome-signal.tico-tico.com`)
+- Observability: Workers Logs, Invocation Logs, Workers Traces
 
 Testing:
 
@@ -166,14 +187,12 @@ bun run typecheck
 bun run --cwd server types
 ```
 
-現時点では自動テストはありません。動作確認は、同一PCの複数ブラウザタブまたは同一Wi-Fi内の複数端末で、部屋作成、共有URL/QRからの自動参加、Enable Audio、Start、Stop、途中参加、RTT/offset/jitter表示、発声補正を確認します。
+現時点では自動テストはありません。動作確認は、同一PCの複数ブラウザタブまたは同一Wi-Fi内の複数端末で、トップページからの遷移、部屋作成、共有URL/QRからの自動参加、Enable Audio、Start、Stop、再生中のBPM・拍子変更、途中参加、切断時の停止、RTT/offset/jitter表示、発声補正を確認します。
 
 ## 5. Future Considerations / Roadmap
 
 - WebRTC接続状態やDataChannel状態の診断表示を増やす。
-- マイク測定による実発声音のズレ補正を検討する。
 - 部屋の永続化やホスト再接続が必要な場合は、Durable Object storageの利用を検討する。
-- frontendをCloudflare PagesまたはWorkers Assetsへ移す。
 - 型チェックに加えて、時計同期ロジックやメッセージ処理の単体テストを追加する。
 
 ## 6. Project Identification
@@ -184,7 +203,7 @@ Runtime: Bun scripts, Vite frontend, Cloudflare Workers server
 
 Primary Language: TypeScript
 
-Date of Last Update: 2026-05-27
+Date of Last Update: 2026-06-15
 
 ## 7. Glossary / Acronyms
 
