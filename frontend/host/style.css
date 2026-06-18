@@ -144,6 +144,23 @@ label {
   font-weight: 700;
 }
 
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+}
+
+.toggle input {
+  width: 20px;
+  min-height: 20px;
+  accent-color: #167a70;
+}
+
+input:disabled + span {
+  opacity: 0.55;
+}
+
 input,
 select {
   width: 100%;

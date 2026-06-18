@@ -53,6 +53,8 @@ export class MetronomeScheduler {
   private scheduledBeats: ScheduledBeat[] = [];
   private audioEnabled = false;
   private outputOffsetSeconds = 0;
+  private vibrationEnabled = false;
+  private vibrationTimers: number[] = [];
 
   async enableAudio(): Promise<void> {
     this.context ??= new AudioContext();
@@ -88,12 +90,18 @@ export class MetronomeScheduler {
     this.outputOffsetSeconds = offsetMs / 1000;
   }
 
+  setVibrationEnabled(enabled: boolean): void {
+    this.vibrationEnabled = enabled && "vibrate" in navigator;
+    if (!this.vibrationEnabled) this.cancelVibrations();
+  }
+
   stop(): void {
     this.startHostTime = null;
     this.nextBeatInBar = 1;
     this.nextBeatHostTime = null;
     this.scheduledBeats = [];
     this.stopTimer();
+    this.cancelVibrations();
   }
 
   beatAtHostTime(hostTime: number): BeatInfo | null {
@@ -125,7 +133,9 @@ export class MetronomeScheduler {
 
       if (audioTime > audioNow + lookAhead) break;
       if (audioTime >= audioNow - 0.02) {
-        this.click(audioTime, this.nextBeatInBar === 1);
+        const accented = this.nextBeatInBar === 1;
+        this.click(audioTime, accented);
+        this.scheduleVibration((audioTime - audioNow) * 1000, accented);
         this.scheduledBeats.push({
           hostTime: beatHostTime,
           beatIndex: this.nextBeatIndex,
@@ -153,6 +163,26 @@ export class MetronomeScheduler {
     oscillator.connect(gain).connect(this.context.destination);
     oscillator.start(time);
     oscillator.stop(time + 0.08);
+  }
+
+  private scheduleVibration(delayMs: number, accented: boolean): void {
+    if (!this.vibrationEnabled || !("vibrate" in navigator)) return;
+
+    const durationMs = accented ? 60 : 25;
+    const timer = window.setTimeout(() => {
+      const index = this.vibrationTimers.indexOf(timer);
+      if (index >= 0) this.vibrationTimers.splice(index, 1);
+      if (this.vibrationEnabled) navigator.vibrate(durationMs);
+    }, Math.max(0, delayMs));
+    this.vibrationTimers.push(timer);
+  }
+
+  private cancelVibrations(): void {
+    for (const timer of this.vibrationTimers) {
+      window.clearTimeout(timer);
+    }
+    this.vibrationTimers = [];
+    if ("vibrate" in navigator) navigator.vibrate(0);
   }
 
   private stopTimer(): void {

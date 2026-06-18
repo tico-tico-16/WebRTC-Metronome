@@ -14,7 +14,9 @@ const rttValue = document.querySelector<HTMLElement>("#rttValue")!;
 const offsetValue = document.querySelector<HTMLElement>("#offsetValue")!;
 const jitterValue = document.querySelector<HTMLElement>("#jitterValue")!;
 const outputOffsetInput = document.querySelector<HTMLInputElement>("#outputOffsetInput")!;
+const vibrationToggle = document.querySelector<HTMLInputElement>("#vibrationToggle")!;
 const roomId = new URLSearchParams(location.search).get("room")?.trim() ?? "";
+const vibrationSupported = "vibrate" in navigator;
 
 const signaling = new SignalingClient();
 const webRTC = new ClientWebRTC((message) => signaling.send(message));
@@ -23,6 +25,10 @@ const scheduler = new MetronomeScheduler();
 
 function readOutputOffsetMs(): number {
   return Math.max(-200, Math.min(200, Number(outputOffsetInput.value) || 0));
+}
+
+function applyVibrationSetting(): void {
+  scheduler.setVibrationEnabled(vibrationSupported && vibrationToggle.checked);
 }
 
 let config: MetronomeConfig = { bpm: 120, beatsPerBar: 4, beatUnit: 4 };
@@ -188,6 +194,7 @@ function joinSharedRoom(): void {
   if (!roomId) {
     audioButton.disabled = true;
     outputOffsetInput.disabled = true;
+    vibrationToggle.disabled = true;
     connectionStatus.textContent = "ホストのURLまたはQRコードからアクセスしてください";
     render();
     return;
@@ -210,6 +217,12 @@ audioButton.addEventListener("click", () => {
 outputOffsetInput.addEventListener("input", () => {
   scheduler.setOutputOffsetMs(readOutputOffsetMs());
 });
+
+vibrationToggle.addEventListener("change", applyVibrationSetting);
+
+vibrationToggle.checked = false;
+vibrationToggle.disabled = !vibrationSupported;
+applyVibrationSetting();
 
 setInterval(render, 100);
 joinSharedRoom();

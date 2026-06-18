@@ -11,6 +11,7 @@ const startButton = document.querySelector<HTMLButtonElement>("#startButton")!;
 const stopButton = document.querySelector<HTMLButtonElement>("#stopButton")!;
 const createRoomButton = document.querySelector<HTMLButtonElement>("#createRoomButton")!;
 const outputOffsetInput = document.querySelector<HTMLInputElement>("#outputOffsetInput")!;
+const vibrationToggle = document.querySelector<HTMLInputElement>("#vibrationToggle")!;
 const connectionStatus = document.querySelector<HTMLElement>("#connectionStatus")!;
 const inviteBox = document.querySelector<HTMLElement>("#inviteBox")!;
 const participantUrl = document.querySelector<HTMLElement>("#participantUrl")!;
@@ -19,6 +20,7 @@ const participantCount = document.querySelector<HTMLElement>("#participantCount"
 const participantList = document.querySelector<HTMLUListElement>("#participantList")!;
 
 const autoCreateRoomStorageKey = "p2p-metronome:auto-create-room";
+const vibrationSupported = "vibrate" in navigator;
 
 let isPlaying = false;
 let hasRoom = false;
@@ -28,6 +30,10 @@ const scheduler = new HostMetronomeScheduler();
 
 function readOutputOffsetMs(): number {
   return Math.max(-200, Math.min(200, Number(outputOffsetInput.value) || 0));
+}
+
+function applyVibrationSetting(): void {
+  scheduler.setVibrationEnabled(vibrationSupported && vibrationToggle.checked);
 }
 
 function readConfig(): MetronomeConfig {
@@ -45,6 +51,7 @@ function setPlaying(nextPlaying: boolean): void {
   bpmInput.disabled = !hasRoom;
   beatInput.disabled = !hasRoom;
   outputOffsetInput.disabled = !hasRoom;
+  vibrationToggle.disabled = !hasRoom || !vibrationSupported;
   startButton.disabled = nextPlaying || !hasRoom;
   stopButton.disabled = !nextPlaying || !hasRoom;
 }
@@ -160,6 +167,8 @@ outputOffsetInput.addEventListener("input", () => {
   scheduler.setOutputOffsetMs(readOutputOffsetMs());
 });
 
+vibrationToggle.addEventListener("change", applyVibrationSetting);
+
 function createRoom(): void {
   if (hasRoom || createRoomButton.disabled) return;
 
@@ -177,6 +186,8 @@ setInterval(() => {
 }, 100);
 
 setPlaying(false);
+vibrationToggle.checked = false;
+applyVibrationSetting();
 
 try {
   const shouldAutoCreateRoom = sessionStorage.getItem(autoCreateRoomStorageKey) === "1";

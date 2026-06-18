@@ -103,6 +103,23 @@ label {
   font-weight: 800;
 }
 
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+}
+
+.toggle input {
+  width: 20px;
+  min-height: 20px;
+  accent-color: #1f776f;
+}
+
+input:disabled + span {
+  opacity: 0.55;
+}
+
 input {
   width: 100%;
   min-height: 46px;
