@@ -3,6 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="複数端末間でテンポを共有できるメトロノームです。複数人のブラウザで同じテンポのメトロノームを再生できます。"
+    />
+    <link rel="canonical" href="https://metronome.tico-tico.com/" />
     <title>P2P同期メトロノーム</title>
     <link rel="stylesheet" href="./style.css" />
   </head>
@@ -12,18 +17,37 @@
         <p class="eyebrow">P2P Sync Metronome</p>
         <h1>P2P同期メトロノーム</h1>
         <p class="description">
-          複数の端末でタイミングを同期しながら、同じテンポのメトロノームを再生できます。
+          複数の端末でタイミングを同期し、同じテンポのメトロノームをそれぞれのブラウザで再生できます。
         </p>
         <a id="startHostLink" class="start-link" href="/host/">ホストとして開始</a>
       </section>
 
-      <section class="panel participant-guide">
-        <h2>参加する方へ</h2>
-        <p>
-          ホストから共有された参加者URLを開くか、QRコードを読み取って参加してください。
-        </p>
+      <section class="guide-grid" aria-label="P2P同期メトロノームについて">
+        <article class="panel info-card">
+          <p class="eyebrow">Use cases</p>
+          <h2>利用場面</h2>
+          <p>
+            合奏やリズム練習など、複数人・複数端末で同じBPMと拍子を共有したい場面に使えます。
+          </p>
+        </article>
+
+        <article class="panel info-card">
+          <p class="eyebrow">How to use</p>
+          <h2>使い方</h2>
+          <ol class="steps">
+            <li>ホストが「ホストとして開始」から部屋を作成します。</li>
+            <li>表示された参加者URLまたはQRコードを共有します。</li>
+            <li>参加者が音声を有効にすると、ホストの操作に合わせて再生します。</li>
+          </ol>
+        </article>
       </section>
     </main>
+
+    <footer class="site-footer">
+      <a class="repository-link" href="https://github.com/tico-tico-16/WebRTC-Metronome">
+        View on GitHub
+      </a>
+    </footer>
 
     <script>
       const startHostLink = document.querySelector("#startHostLink");
