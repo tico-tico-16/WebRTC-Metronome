@@ -16,7 +16,7 @@
 │   │   ├── signaling.ts       # ホスト側WebSocketシグナリング
 │   │   ├── webrtc.ts          # ホスト側WebRTC PeerConnection管理
 │   │   ├── clockSync.ts       # ホスト時刻とping/pong応答
-│   │   └── metronome.ts       # ホスト側クリック音生成、予約再生、発声補正
+│   │   └── metronome.ts       # 音声有効化待ちと共通エンジンへの委譲
 │   ├── client/
 │   │   ├── index.html         # 参加者画面
 │   │   ├── style.css          # 参加者画面のスタイル
@@ -24,9 +24,18 @@
 │   │   ├── signaling.ts       # 参加者側WebSocketシグナリング
 │   │   ├── webrtc.ts          # 参加者側WebRTC PeerConnection管理
 │   │   ├── clockSync.ts       # 参加者側のRTT/offset/jitter推定
-│   │   └── metronome.ts       # 参加者側クリック音生成、予約再生、発声補正
+│   │   └── metronome.ts       # 音声有効状態・時刻変換と共通エンジンへの委譲
 │   ├── shared/
-│   │   └── webrtcConfig.ts    # ホスト・参加者共通のICEサーバー設定
+│   │   ├── webrtcConfig.ts    # ホスト・参加者共通のICEサーバー設定
+│   │   └── metronome/
+│   │       ├── beat.ts        # 拍間隔・拍位置の純粋関数
+│   │       ├── engine.ts      # 拍管理と先読み予約、現在拍・次の強拍の照会
+│   │       ├── clickOutput.ts # AudioContextの有効化とクリック生成
+│   │       └── vibrationOutput.ts # 振動設定・予約・取消し
+│   ├── tests/
+│   │   ├── helpers/browser.ts # 手動時計・タイマー・ブラウザAPIのモック
+│   │   ├── metronome.test.ts  # 既存の役割別APIに対する回帰テスト
+│   │   └── metronomeEngine.test.ts # ブラウザに依存しないエンジンのテスト
 │   ├── package.json           # Vite配信、frontend build、QR生成依存
 │   ├── tsconfig.json          # frontend用TypeScript設定
 │   └── vite.config.ts         # ViteのMPA設定
@@ -130,7 +139,15 @@ Technologies: TypeScript, WebRTC, Web Audio API, HTML/CSS
 
 Name: Local Web Audio scheduler
 
-Description: ホスト・参加者のどちらも音声ファイルは使わず、`OscillatorNode` と `GainNode` でクリック音を生成します。1拍目は高い音、それ以外は低い音です。25ms間隔のタイマーは直接発音には使わず、約180ms先までのクリック音をWeb Audio APIへ予約します。発声補正値は予約するAudioContext時刻へ加算されます。再生中にBPMや拍子を変更した場合は、次の拍位置を保持しながら新しい設定を以後の予約へ反映します。
+Description: ホスト・参加者は共通の `MetronomeEngine` に拍管理と先読み予約を委譲します。`ClickOutput` は `OscillatorNode` と `GainNode` でクリック音を生成し、`VibrationOutput` は振動の設定・予約・取消しを管理します。1拍目は高い音、それ以外は低い音です。拍子0では強拍を付けません。
+
+エンジンには端末の現在時刻、ホスト時刻から端末時刻への変換、周期タイマー、音声・振動出力、予約可能状態の判定を注入します。ブラウザAPIや `ClockSync` への直接依存はありません。ホストの時刻変換は恒等関数、参加者は予約ごとに時計同期の変換関数を評価します。時刻・拍間隔は秒、タイマー間隔・振動時間・UIの発声補正はミリ秒です。
+
+25ms間隔のタイマーは直接発音には使わず、180ms先までのクリック音をWeb Audio APIへ予約します。20msを超えて遅れた拍は予約せずに進め、予約履歴は64拍まで保持します。発声補正は `audioNow + (hostToLocalTime(beatHostTime) - localNow) + offsetSeconds` の最後に加算し、履歴のホスト時刻・拍番号には加算しません。
+
+既存の `HostMetronomeScheduler` / `MetronomeScheduler` の公開メソッドとimport元を維持しています。ホストの `start()` は音声有効化を待機します。参加者の `start()` は同期的で、別途音声を有効化し、AudioContextがrunningの場合に予約を進めます。ホストの予約判定は従来どおりAudioContextの存在のみです。
+
+再生中のBPM・拍子変更は、次の拍位置を保持しながら新しい設定を以後の予約へ反映します。過去の予約を再計画するテンポ履歴は今回の共通化では導入していません。次の強拍の照会もエンジンに集約し、途中参加用の開始基準をホストの既存APIから取得します。
 
 Technologies: Web Audio API
 
@@ -178,8 +195,16 @@ Production:
 Testing:
 
 ```bash
+bun run test
 bun run typecheck
+bun run build:frontend
 ```
+
+自動テストにはBun標準の `bun:test` を使用します。`frontend/tests/metronome.test.ts` はホスト・参加者の既存公開APIに対する回帰テストで、共通化前に成功する状態を確立し、共通化後も同じ期待値を使っています。ブラウザAPIのモックは各テスト後に復元し、グローバルを差し替えるスイートは `describe.serial` で直列実行します。`metronomeEngine.test.ts` はブラウザのグローバルを用意せず、注入した依存だけで予約を検証します。
+
+対象は拍子0・1・3・4、開始境界・途中開始、先読みと遅延許容、時計差・発声補正、設定更新、現在拍・強拍の照会、音声有効化の遅延・拒否、音声パラメータ、振動、周期タイマーの停止と再開始です。内部フィールドではなく、拍照会と出力予約の時刻・アクセントを確認します。共通コードとテストもfrontendの型チェックに含めます。
+
+今後も各リファクタリングの前に対象と影響範囲のテストを追加し、変更後は蓄積した全テストを実行します。不具合修正では、その項目の着手時に正しい期待動作を決め、修正前に失敗する再現テストを追加します。
 
 `server/wrangler.jsonc` を変更した場合は、Wranglerの生成型も更新します。
 
@@ -187,13 +212,21 @@ bun run typecheck
 bun run --cwd server types
 ```
 
-現時点では自動テストはありません。動作確認は、同一PCの複数ブラウザタブまたは同一Wi-Fi内の複数端末で、トップページからの遷移、部屋作成、共有URL/QRからの自動参加、Enable Audio、Start、Stop、再生中のBPM・拍子変更、途中参加、切断時の停止、RTT/offset/jitter表示、発声補正を確認します。
+ブラウザの結合確認は、同一PCの複数ブラウザタブまたは同一Wi-Fi内の複数端末で、トップページからの遷移、部屋作成、共有URL/QRからの自動参加、Enable Audio、Start、Stop、再生中のBPM・拍子変更、途中参加、切断時の停止、RTT/offset/jitter表示、発声補正を確認します。ブラウザの画面状態やモックでは、実際のスピーカー間の音響同期や振動モーターの動作は検証できません。これらは対応端末で確認します。
+
+### R01後も残る既知の課題
+
+- R02: 設定変更の共通適用時刻・基準拍を通信していないため、受信遅延や先読み範囲の違いでBPM・拍子変更後の位相がずれる可能性があります。設定変更テストは現在の各スケジューラの挙動を確認するもので、端末間の変更同期を保証しません。
+- R03a: Stopは周期タイマー・拍履歴・振動を解除しますが、Web Audioへ予約した未発音の音源は取り消しません。
+- R03b: ホストのAudioContext有効化待ちの間にStopした場合、古いStartが待機完了後に再生を開始し得ます。
+
+これらは挙動保持の共通化と分けて修正します。CI全体の整備、通信・時計同期・サーバーのテストは今回の対象外です。
 
 ## 5. Future Considerations / Roadmap
 
 - WebRTC接続状態やDataChannel状態の診断表示を増やす。
 - 部屋の永続化やホスト再接続が必要な場合は、Durable Object storageの利用を検討する。
-- 型チェックに加えて、時計同期ロジックやメッセージ処理の単体テストを追加する。
+- スケジューラの回帰テストに加えて、時計同期ロジックやメッセージ処理の単体テストを追加する。
 
 ## 6. Project Identification
 
@@ -203,7 +236,7 @@ Runtime: Bun scripts, Vite frontend, Cloudflare Workers server
 
 Primary Language: TypeScript
 
-Date of Last Update: 2026-06-15
+Date of Last Update: 2026-09-06
 
 ## 7. Glossary / Acronyms
 

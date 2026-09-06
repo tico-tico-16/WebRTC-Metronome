@@ -4,6 +4,7 @@
   "private": true,
   "workspaces": ["frontend", "server"],
   "scripts": {
+    "test": "bun test",
     "dev": "bun run scripts/dev.ts",
     "dev:info": "bun run scripts/dev.ts --info",
     "dev:frontend": "bun run --cwd frontend dev",
