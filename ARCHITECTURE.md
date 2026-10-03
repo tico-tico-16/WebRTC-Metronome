@@ -13,6 +13,7 @@
 │   │   ├── index.html         # ホスト画面
 │   │   ├── style.css          # ホスト画面のスタイル
 │   │   ├── main.ts            # ホスト画面のUI制御
+│   │   ├── status.ts          # 再生状態の表示文言と接続済み参加者数
 │   │   ├── signaling.ts       # ホスト側WebSocketシグナリング
 │   │   ├── webrtc.ts          # ホスト側WebRTC PeerConnection管理
 │   │   ├── clockSync.ts       # ホスト時刻とping/pong応答
@@ -27,6 +28,7 @@
 │   │   └── metronome.ts       # 音声有効状態・時刻変換と共通エンジンへの委譲
 │   ├── shared/
 │   │   ├── webrtcConfig.ts    # ホスト・参加者共通のICEサーバー設定
+│   │   ├── controlValues.ts   # BPM・拍子・発声補正の入力値の範囲と正規化
 │   │   └── metronome/
 │   │       ├── beat.ts        # 拍間隔・拍位置の純粋関数
 │   │       ├── engine.ts      # 拍管理と先読み予約、現在拍・次の強拍の照会
@@ -35,7 +37,8 @@
 │   ├── tests/
 │   │   ├── helpers/browser.ts # 手動時計・タイマー・ブラウザAPIのモック
 │   │   ├── metronome.test.ts  # 既存の役割別APIに対する回帰テスト
-│   │   └── metronomeEngine.test.ts # ブラウザに依存しないエンジンのテスト
+│   │   ├── metronomeEngine.test.ts # ブラウザに依存しないエンジンのテスト
+│   │   └── controls.test.ts   # 入力値の正規化とホスト表示の判定
 │   ├── package.json           # Vite配信、frontend build、QR生成依存
 │   ├── tsconfig.json          # frontend用TypeScript設定
 │   └── vite.config.ts         # ViteのMPA設定
@@ -123,7 +126,7 @@ Technologies: Durable Objects, WebSocket Hibernation API, TypeScript
 
 Name: Host browser app
 
-Description: ホストだけが部屋作成、BPM、拍子、Start、Stopを操作できます。BPMと拍子は再生中も変更でき、現在の拍位置を維持したまま以後の予約再生へ反映されます。端末固有の出力遅延を手動調整するため、-200msから200msの発声補正を設定できます。部屋作成後に参加者一覧、RTT、offset、jitter、参加者URL、QRコードを表示します。各参加者に対して1つの `RTCPeerConnection` を作り、`control` と `sync` の2つのDataChannelを開きます。
+Description: ホストだけが部屋作成、BPM、拍子、Start、Stopを操作できます。BPMは30から240、拍子は0から16で、範囲外の入力は確定時に補正した値を入力欄へ戻します。BPMと拍子は再生中も変更でき、現在の拍位置を維持したまま以後の予約再生へ反映されます。端末固有の出力遅延を手動調整するため、-200msから200msの発声補正を設定できます。接続状態と再生状態（開始までのカウントダウン、現在拍、停止）は別の欄に表示します。部屋作成後に参加者一覧、RTT、offset、jitter、参加者URL、QRコードを表示し、参加者数には接続が確立した参加者だけを数えます。各参加者に対して1つの `RTCPeerConnection` を作り、`control` と `sync` の2つのDataChannelを開きます。
 
 Technologies: TypeScript, WebRTC, Web Audio API, HTML/CSS
 
@@ -131,7 +134,7 @@ Technologies: TypeScript, WebRTC, Web Audio API, HTML/CSS
 
 Name: Participant browser app
 
-Description: 参加者はホストから共有されたURLまたはQRコードで開くと自動参加し、ブラウザの自動再生制限を解除するEnable Audioと、-200msから200msの手動発声補正を操作します。ホストから受け取った状態に従ってローカルでクリック音を予約再生します。`sync` DataChannel上のping/pongからRTT、offset、jitterを推定し、ホスト時刻をローカル時刻へ変換します。再生中に参加した場合は次の強拍を開始基準として受け取り、時計同期が安定し、かつ音声が有効になるまで再生開始を保留します。ホストまたはシグナリングとの接続が失われた場合は、再生と時計同期を停止します。
+Description: 参加者はホストから共有されたURLまたはQRコードで開くと自動参加し、ブラウザの自動再生制限を解除するEnable Audioと、-200msから200msの手動発声補正を操作します。音声の有効化に成功するとボタンを有効化済みの表示に切り替えます。ホスト・参加者とも、振動APIに非対応の端末ではバイブレーション設定に非対応である旨を表示します。ホストから受け取った状態に従ってローカルでクリック音を予約再生します。`sync` DataChannel上のping/pongからRTT、offset、jitterを推定し、ホスト時刻をローカル時刻へ変換します。再生中に参加した場合は次の強拍を開始基準として受け取り、時計同期が安定し、かつ音声が有効になるまで再生開始を保留します。ホストまたはシグナリングとの接続が失われた場合は、再生と時計同期を停止します。
 
 Technologies: TypeScript, WebRTC, Web Audio API, HTML/CSS
 
@@ -200,7 +203,7 @@ bun run typecheck
 bun run build:frontend
 ```
 
-自動テストにはBun標準の `bun:test` を使用します。`frontend/tests/metronome.test.ts` はホスト・参加者の既存公開APIに対する回帰テストで、共通化前に成功する状態を確立し、共通化後も同じ期待値を使っています。ブラウザAPIのモックは各テスト後に復元し、グローバルを差し替えるスイートは `describe.serial` で直列実行します。`metronomeEngine.test.ts` はブラウザのグローバルを用意せず、注入した依存だけで予約を検証します。
+自動テストにはBun標準の `bun:test` を使用します。`frontend/tests/metronome.test.ts` はホスト・参加者の既存公開APIに対する回帰テストで、共通化前に成功する状態を確立し、共通化後も同じ期待値を使っています。ブラウザAPIのモックは各テスト後に復元し、グローバルを差し替えるスイートは `describe.serial` で直列実行します。`metronomeEngine.test.ts` はブラウザのグローバルを用意せず、注入した依存だけで予約を検証します。`controls.test.ts` は、画面から切り出した入力値の正規化、ホストの再生状態の文言、接続済み参加者数の判定を検証します。
 
 対象は拍子0・1・3・4、開始境界・途中開始、先読みと遅延許容、時計差・発声補正、設定更新、現在拍・強拍の照会、音声有効化の遅延・拒否、音声パラメータ、振動、周期タイマーの停止と再開始です。内部フィールドではなく、拍照会と出力予約の時刻・アクセントを確認します。共通コードとテストもfrontendの型チェックに含めます。
 
@@ -236,7 +239,7 @@ Runtime: Bun scripts, Vite frontend, Cloudflare Workers server
 
 Primary Language: TypeScript
 
-Date of Last Update: 2026-09-06
+Date of Last Update: 2026-10-03
 
 ## 7. Glossary / Acronyms
 
