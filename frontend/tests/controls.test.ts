@@ -12,6 +12,7 @@ describe("control values", () => {
   test("clamps BPM to 30-240 and falls back to 120", () => {
     expect(normalizeBpm("300")).toBe(240);
     expect(normalizeBpm("10")).toBe(30);
+    expect(normalizeBpm("0")).toBe(30);
     expect(normalizeBpm("96")).toBe(96);
     expect(normalizeBpm("")).toBe(120);
     expect(normalizeBpm("abc")).toBe(120);

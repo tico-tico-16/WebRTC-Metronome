@@ -10,8 +10,16 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+/** Empty or non-numeric input yields null; numeric zero is kept so it can be clamped. */
+function parseNumber(value: string): number | null {
+  if (value.trim() === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 export function normalizeBpm(value: string): number {
-  return clamp(Number(value) || DEFAULT_BPM, MIN_BPM, MAX_BPM);
+  const bpm = parseNumber(value);
+  return bpm === null ? DEFAULT_BPM : clamp(bpm, MIN_BPM, MAX_BPM);
 }
 
 /** 0 means no accented downbeat. */
