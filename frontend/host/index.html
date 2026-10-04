@@ -4,59 +4,69 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="robots" content="noindex,follow" />
-    <title>P2P Sync Metronome Host</title>
+    <title>ホスト | P2P同期メトロノーム</title>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
     <main class="shell">
-      <section class="panel hero">
-        <div>
-          <p class="eyebrow">Host</p>
-          <h1>P2P同期メトロノーム</h1>
-          <p class="status" id="connectionStatus">Signaling disconnected</p>
+      <header class="app-header">
+        <a class="app-title" href="/">P2P同期メトロノーム</a>
+        <span class="app-role">ホスト</span>
+        <div class="app-header-actions">
+          <p class="status-chip" id="connectionStatus" data-tone="neutral">未接続</p>
+          <button id="createRoomButton" class="compact" type="button">部屋を作成</button>
         </div>
-        <button id="createRoomButton" class="create-room" type="button">部屋を作成</button>
-        <div id="inviteBox" class="url-box" hidden>
-          <div>
-            <span>参加者URL</span>
-            <strong id="participantUrl"></strong>
-          </div>
-          <div id="participantQr" class="qr-code" aria-label="参加者URLのQRコード"></div>
-        </div>
-      </section>
+      </header>
 
-      <section class="grid">
-        <form class="panel controls" id="controls">
-          <label>
-            BPM
-            <input id="bpmInput" type="number" min="30" max="240" value="120" />
-          </label>
-          <label>
-            beat
-            <input id="beatInput" type="number" min="0" max="16" step="1" value="4" />
-          </label>
-          <label class="wide">
-            発声補正 ms
-            <input id="outputOffsetInput" type="number" min="-200" max="200" step="1" value="0" />
-          </label>
-          <label class="wide toggle">
+      <div class="layout">
+        <section class="panel player" aria-label="演奏">
+          <div id="beatDisplay"></div>
+          <button id="playButton" class="play-button" type="button">再生</button>
+          <p class="hint">Space キーでも再生・停止できます</p>
+          <div class="field-row">
+            <label>
+              BPM
+              <input id="bpmInput" type="number" min="30" max="240" value="120" />
+            </label>
+            <label>
+              拍子
+              <input id="beatInput" type="number" min="0" max="16" step="1" value="4" />
+            </label>
+          </div>
+          <label class="toggle">
             <input id="vibrationToggle" type="checkbox" />
             <span>バイブレーション</span>
             <small id="vibrationNote" class="toggle-note" hidden>この端末は非対応</small>
           </label>
-          <p id="playbackStatus" class="wide playback-status">Stopped</p>
-          <button id="startButton" type="button">Start</button>
-          <button id="stopButton" type="button">Stop</button>
-        </form>
+          <details>
+            <summary>詳細設定</summary>
+            <div class="details-body">
+              <label for="outputOffsetInput">発声補正 (ms)</label>
+              <div class="offset-control">
+                <input id="outputOffsetRange" type="range" min="-200" max="200" step="1" value="0" aria-label="発声補正 (ms)" />
+                <input id="outputOffsetInput" type="number" min="-200" max="200" step="1" value="0" />
+              </div>
+              <p class="hint">この端末の音が他の端末より早く聞こえるときはプラス、遅く聞こえるときはマイナスに調整します。</p>
+            </div>
+          </details>
+        </section>
 
         <section class="panel">
           <div class="section-head">
             <h2>参加者</h2>
-            <span id="participantCount">0 connected</span>
+            <span id="participantCount">0人接続中</span>
+          </div>
+          <div id="inviteBox" class="url-box" hidden>
+            <div>
+              <span>参加者URL</span>
+              <strong id="participantUrl"></strong>
+            </div>
+            <div id="participantQr" class="qr-code" aria-label="参加者URLのQRコード"></div>
           </div>
           <ul id="participantList" class="participants"></ul>
+          <p id="participantsEmpty" class="hint">まだ参加者はいません。</p>
         </section>
-      </section>
+      </div>
     </main>
 
     <script type="module" src="./main.ts"></script>

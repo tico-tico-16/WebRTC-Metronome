@@ -3,18 +3,29 @@ import { ClockSync } from "./clockSync.ts";
 import { beatAtHostTime, MetronomeScheduler } from "./metronome.ts";
 import { SignalingClient } from "./signaling.ts";
 import { ClientWebRTC } from "./webrtc.ts";
-import { normalizeOutputOffsetMs } from "../shared/controlValues.ts";
+import { BeatDisplay } from "../shared/ui/beatDisplay.ts";
+import {
+  connectionLabel,
+  isConnectionLost,
+  participantSyncLabel,
+  signalingErrorLabel,
+  type StatusLabel,
+} from "../shared/ui/labels.ts";
+import { bindOutputOffsetControl } from "../shared/ui/outputOffsetControl.ts";
+import { playbackPhase } from "../shared/ui/playback.ts";
 
+const audioGate = document.querySelector<HTMLElement>("#audioGate")!;
 const audioButton = document.querySelector<HTMLButtonElement>("#audioButton")!;
+const audioState = document.querySelector<HTMLElement>("#audioState")!;
 const connectionStatus = document.querySelector<HTMLElement>("#connectionStatus")!;
+const reconnectButton = document.querySelector<HTMLButtonElement>("#reconnectButton")!;
 const syncStatus = document.querySelector<HTMLElement>("#syncStatus")!;
-const bpmValue = document.querySelector<HTMLElement>("#bpmValue")!;
-const meterValue = document.querySelector<HTMLElement>("#meterValue")!;
-const beatValue = document.querySelector<HTMLElement>("#beatValue")!;
+const beatDisplay = new BeatDisplay(document.querySelector<HTMLElement>("#beatDisplay")!);
 const rttValue = document.querySelector<HTMLElement>("#rttValue")!;
 const offsetValue = document.querySelector<HTMLElement>("#offsetValue")!;
 const jitterValue = document.querySelector<HTMLElement>("#jitterValue")!;
 const outputOffsetInput = document.querySelector<HTMLInputElement>("#outputOffsetInput")!;
+const outputOffsetRange = document.querySelector<HTMLInputElement>("#outputOffsetRange")!;
 const vibrationToggle = document.querySelector<HTMLInputElement>("#vibrationToggle")!;
 const vibrationNote = document.querySelector<HTMLElement>("#vibrationNote")!;
 const roomId = new URLSearchParams(location.search).get("room")?.trim() ?? "";
@@ -24,10 +35,9 @@ const signaling = new SignalingClient();
 const webRTC = new ClientWebRTC((message) => signaling.send(message));
 const clockSync = new ClockSync((message) => webRTC.sendSync(message));
 const scheduler = new MetronomeScheduler();
-
-function readOutputOffsetMs(): number {
-  return normalizeOutputOffsetMs(outputOffsetInput.value);
-}
+const readOutputOffsetMs = bindOutputOffsetControl(outputOffsetInput, outputOffsetRange, (offsetMs) => {
+  scheduler.setOutputOffsetMs(offsetMs);
+});
 
 function applyVibrationSetting(): void {
   scheduler.setVibrationEnabled(vibrationSupported && vibrationToggle.checked);
@@ -39,31 +49,51 @@ let startHostTime: number | null = null;
 let pendingStart = false;
 let hasJoined = false;
 let peerState = "disconnected";
+let beatFrame: number | null = null;
+// The server sends an error just before closing the socket; keep it rather than a generic message.
+let signalingError: string | null = null;
+
+function setStatus(label: StatusLabel, connectionLost = false): void {
+  connectionStatus.textContent = label.text;
+  connectionStatus.dataset.tone = label.tone;
+  reconnectButton.hidden = !connectionLost;
+}
+
+function formatMs(seconds: number | null): string {
+  return seconds === null ? "--" : `${(seconds * 1000).toFixed(1)}ms`;
+}
+
+function renderBeat(): void {
+  const hostNow = clockSync.hostNow();
+  const phase = playbackPhase(hostNow, isPlaying ? startHostTime : null);
+  const beat = phase.kind === "playing"
+    ? scheduler.beatAtHostTime(hostNow) ?? beatAtHostTime(hostNow, startHostTime, config)
+    : null;
+  beatDisplay.update({ phase, beat, config });
+}
+
+function animateBeat(): void {
+  renderBeat();
+  beatFrame = isPlaying ? requestAnimationFrame(animateBeat) : null;
+}
 
 function render(): void {
-  bpmValue.textContent = String(config.bpm);
-  meterValue.textContent = String(config.beatsPerBar);
-  rttValue.textContent = clockSync.stats.rtt === null ? "--" : `${(clockSync.stats.rtt * 1000).toFixed(1)}ms`;
-  offsetValue.textContent = clockSync.stats.offset === null ? "--" : `${(clockSync.stats.offset * 1000).toFixed(1)}ms`;
-  jitterValue.textContent = clockSync.stats.jitter === null ? "--" : `${(clockSync.stats.jitter * 1000).toFixed(1)}ms`;
+  rttValue.textContent = formatMs(clockSync.stats.rtt);
+  offsetValue.textContent = formatMs(clockSync.stats.offset);
+  jitterValue.textContent = formatMs(clockSync.stats.jitter);
 
-  if (isPlaying && startHostTime !== null) {
-    const hostNow = clockSync.hostNow();
-    const beat = scheduler.beatAtHostTime(hostNow) ?? beatAtHostTime(hostNow, startHostTime, config);
-    beatValue.textContent = String(beat.beatInBar);
-  } else {
-    beatValue.textContent = "--";
-  }
+  const label = participantSyncLabel({
+    joined: hasJoined,
+    connectionLost: isConnectionLost(peerState),
+    stable: clockSync.stats.stable,
+    isPlaying,
+    audioEnabled: scheduler.isAudioEnabled(),
+  });
+  syncStatus.textContent = label.text;
+  syncStatus.dataset.tone = label.tone;
 
-  if (!hasJoined || peerState === "disconnected" || peerState === "failed") {
-    syncStatus.textContent = "waiting";
-  } else if (!clockSync.stats.stable) {
-    syncStatus.textContent = "syncing...";
-  } else if (isPlaying && !scheduler.isAudioEnabled()) {
-    syncStatus.textContent = "Enable Audio required";
-  } else {
-    syncStatus.textContent = isPlaying ? "playing" : "synced";
-  }
+  renderBeat();
+  if (isPlaying && beatFrame === null) beatFrame = requestAnimationFrame(animateBeat);
 }
 
 function applyConfig(message: MetronomeConfig): void {
@@ -140,13 +170,13 @@ function handleControl(message: ControlMessage): void {
 signaling.onMessage((message: SignalMessage) => {
   if (message.type === "registered") {
     hasJoined = true;
-    connectionStatus.textContent = `Joined room ${message.roomId}`;
+    setStatus({ text: "ホストに接続中…", tone: "neutral" });
     render();
     return;
   }
 
   if (message.type === "host_available") {
-    connectionStatus.textContent = message.hostPresent ? "Host available" : "Waiting for host";
+    setStatus(message.hostPresent ? { text: "ホストに接続中…", tone: "neutral" } : { text: "ホストを待っています", tone: "warn" });
     if (!message.hostPresent) {
       handleHostDisconnected();
       peerState = "disconnected";
@@ -161,17 +191,18 @@ signaling.onMessage((message: SignalMessage) => {
   }
 
   if (message.type === "error") {
-    connectionStatus.textContent = message.message;
+    signalingError = signalingErrorLabel(message.message);
+    setStatus({ text: signalingError, tone: "error" }, true);
   }
 });
 
 webRTC.onState((state) => {
   peerState = state;
-  connectionStatus.textContent = state;
+  setStatus(connectionLabel(state), isConnectionLost(state));
   if (state === "sync open") {
     clockSync.start();
   }
-  if (state === "disconnected" || state === "failed" || state === "closed") {
+  if (isConnectionLost(state)) {
     handleHostDisconnected();
   }
   render();
@@ -180,7 +211,7 @@ webRTC.onState((state) => {
 signaling.onClose(() => {
   handleHostDisconnected();
   peerState = "disconnected";
-  connectionStatus.textContent = "Signaling disconnected";
+  setStatus({ text: signalingError ?? "サーバーとの接続が切れました", tone: "error" }, true);
   render();
 });
 
@@ -194,36 +225,31 @@ webRTC.onSync((message) => {
 
 function joinSharedRoom(): void {
   if (!roomId) {
-    audioButton.disabled = true;
+    audioGate.hidden = true;
     outputOffsetInput.disabled = true;
+    outputOffsetRange.disabled = true;
     vibrationToggle.disabled = true;
-    connectionStatus.textContent = "ホストのURLまたはQRコードからアクセスしてください";
+    setStatus({ text: "ホストのURLまたはQRコードからアクセスしてください", tone: "error" });
     render();
     return;
   }
 
   hasJoined = true;
   signaling.connect(roomId, `Client ${Math.floor(Math.random() * 1000)}`);
-  connectionStatus.textContent = "Joining...";
+  setStatus({ text: "参加中…", tone: "neutral" });
   render();
 }
 
 audioButton.addEventListener("click", () => {
   void scheduler.enableAudio().then(() => {
-    audioButton.disabled = true;
-    audioButton.textContent = "Audio enabled ✓";
-    audioButton.classList.add("enabled");
+    audioGate.hidden = true;
+    audioState.hidden = false;
     startWhenStable();
     render();
   });
 });
 
-outputOffsetInput.addEventListener("input", () => {
-  scheduler.setOutputOffsetMs(readOutputOffsetMs());
-});
-outputOffsetInput.addEventListener("change", () => {
-  outputOffsetInput.value = String(readOutputOffsetMs());
-});
+reconnectButton.addEventListener("click", () => location.reload());
 
 vibrationToggle.addEventListener("change", applyVibrationSetting);
 

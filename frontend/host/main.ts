@@ -3,25 +3,30 @@ import QRCode from "qrcode";
 import { nowSeconds } from "./clockSync.ts";
 import { beatAtHostTime, HostMetronomeScheduler } from "./metronome.ts";
 import { SignalingClient } from "./signaling.ts";
-import { connectedPeerCount, playbackStatusText } from "./status.ts";
+import { connectedPeerCount, peerStatusLabel } from "./status.ts";
 import { HostWebRTC } from "./webrtc.ts";
-import { normalizeBeatsPerBar, normalizeBpm, normalizeOutputOffsetMs } from "../shared/controlValues.ts";
+import { normalizeBeatsPerBar, normalizeBpm } from "../shared/controlValues.ts";
+import { BeatDisplay } from "../shared/ui/beatDisplay.ts";
+import { signalingErrorLabel, type StatusLabel } from "../shared/ui/labels.ts";
+import { bindOutputOffsetControl } from "../shared/ui/outputOffsetControl.ts";
+import { playbackPhase } from "../shared/ui/playback.ts";
 
 const bpmInput = document.querySelector<HTMLInputElement>("#bpmInput")!;
 const beatInput = document.querySelector<HTMLInputElement>("#beatInput")!;
-const startButton = document.querySelector<HTMLButtonElement>("#startButton")!;
-const stopButton = document.querySelector<HTMLButtonElement>("#stopButton")!;
+const playButton = document.querySelector<HTMLButtonElement>("#playButton")!;
 const createRoomButton = document.querySelector<HTMLButtonElement>("#createRoomButton")!;
 const outputOffsetInput = document.querySelector<HTMLInputElement>("#outputOffsetInput")!;
+const outputOffsetRange = document.querySelector<HTMLInputElement>("#outputOffsetRange")!;
 const vibrationToggle = document.querySelector<HTMLInputElement>("#vibrationToggle")!;
 const vibrationNote = document.querySelector<HTMLElement>("#vibrationNote")!;
 const connectionStatus = document.querySelector<HTMLElement>("#connectionStatus")!;
-const playbackStatus = document.querySelector<HTMLElement>("#playbackStatus")!;
+const beatDisplay = new BeatDisplay(document.querySelector<HTMLElement>("#beatDisplay")!);
 const inviteBox = document.querySelector<HTMLElement>("#inviteBox")!;
 const participantUrl = document.querySelector<HTMLElement>("#participantUrl")!;
 const participantQr = document.querySelector<HTMLElement>("#participantQr")!;
 const participantCount = document.querySelector<HTMLElement>("#participantCount")!;
 const participantList = document.querySelector<HTMLUListElement>("#participantList")!;
+const participantsEmpty = document.querySelector<HTMLElement>("#participantsEmpty")!;
 
 const autoCreateRoomStorageKey = "p2p-metronome:auto-create-room";
 const vibrationSupported = "vibrate" in navigator;
@@ -30,11 +35,11 @@ let isPlaying = false;
 let hasRoom = false;
 let startHostTime: number | null = null;
 let latestSentHostTime = nowSeconds();
+let beatFrame: number | null = null;
 const scheduler = new HostMetronomeScheduler();
-
-function readOutputOffsetMs(): number {
-  return normalizeOutputOffsetMs(outputOffsetInput.value);
-}
+const readOutputOffsetMs = bindOutputOffsetControl(outputOffsetInput, outputOffsetRange, (offsetMs) => {
+  scheduler.setOutputOffsetMs(offsetMs);
+});
 
 function applyVibrationSetting(): void {
   scheduler.setVibrationEnabled(vibrationSupported && vibrationToggle.checked);
@@ -48,14 +53,21 @@ function readConfig(): MetronomeConfig {
   };
 }
 
+function setStatus(label: StatusLabel): void {
+  connectionStatus.textContent = label.text;
+  connectionStatus.dataset.tone = label.tone;
+}
+
 function setPlaying(nextPlaying: boolean): void {
   isPlaying = nextPlaying;
   bpmInput.disabled = !hasRoom;
   beatInput.disabled = !hasRoom;
   outputOffsetInput.disabled = !hasRoom;
+  outputOffsetRange.disabled = !hasRoom;
   vibrationToggle.disabled = !hasRoom || !vibrationSupported;
-  startButton.disabled = nextPlaying || !hasRoom;
-  stopButton.disabled = !nextPlaying || !hasRoom;
+  playButton.disabled = !hasRoom;
+  playButton.textContent = nextPlaying ? "停止" : "再生";
+  playButton.classList.toggle("is-playing", nextPlaying);
 }
 
 const signaling = new SignalingClient();
@@ -69,22 +81,29 @@ const webRTC = new HostWebRTC(
   }),
 );
 
+function formatMs(label: string, seconds: number | null): string {
+  return seconds === null ? `${label} --` : `${label} ${(seconds * 1000).toFixed(1)}ms`;
+}
+
 function renderParticipants(): void {
   participantList.innerHTML = "";
-  participantCount.textContent = `${connectedPeerCount(webRTC.peers.values())} connected`;
+  participantCount.textContent = `${connectedPeerCount(webRTC.peers.values())}人接続中`;
+  participantsEmpty.hidden = webRTC.peers.size > 0;
 
   for (const peer of webRTC.peers.values()) {
     const item = document.createElement("li");
-    const left = document.createElement("span");
-    const right = document.createElement("span");
-    left.textContent = `${peer.name} (${peer.status})`;
-    right.className = "metric";
-    right.textContent = [
-      peer.rtt === null ? "RTT --" : `RTT ${(peer.rtt * 1000).toFixed(1)}ms`,
-      peer.offset === null ? "offset --" : `offset ${(peer.offset * 1000).toFixed(1)}ms`,
-      peer.jitter === null ? "jitter --" : `jitter ${(peer.jitter * 1000).toFixed(1)}ms`,
-    ].join(" / ");
-    item.append(left, right);
+    const name = document.createElement("span");
+    const status = document.createElement("span");
+    const metrics = document.createElement("span");
+    const label = peerStatusLabel(peer);
+    name.className = "participant-name";
+    name.textContent = peer.name;
+    status.className = "status-chip";
+    status.dataset.tone = label.tone;
+    status.textContent = label.text;
+    metrics.className = "metric";
+    metrics.textContent = [formatMs("RTT", peer.rtt), formatMs("offset", peer.offset), formatMs("jitter", peer.jitter)].join(" / ");
+    item.append(name, status, metrics);
     participantList.append(item);
   }
 }
@@ -96,7 +115,7 @@ signaling.onMessage((message: SignalMessage) => {
     createRoomButton.hidden = true;
     void renderParticipantInvite(message.participantUrl ?? "");
     inviteBox.hidden = false;
-    connectionStatus.textContent = `Room ${message.roomId} ready`;
+    setStatus({ text: "部屋を作成しました", tone: "ok" });
     setPlaying(false);
     return;
   }
@@ -117,7 +136,7 @@ signaling.onMessage((message: SignalMessage) => {
   }
 
   if (message.type === "error") {
-    connectionStatus.textContent = message.message;
+    setStatus({ text: signalingErrorLabel(message.message), tone: "error" });
     if (!hasRoom) createRoomButton.disabled = false;
   }
 });
@@ -137,24 +156,56 @@ async function renderParticipantInvite(url: string): Promise<void> {
   });
 }
 
-startButton.addEventListener("click", () => {
+function renderBeat(): void {
+  const hostNow = nowSeconds();
+  const phase = playbackPhase(hostNow, isPlaying ? startHostTime : null);
+  const config = readConfig();
+  const beat = phase.kind === "playing"
+    ? scheduler.beatAtHostTime(hostNow) ?? beatAtHostTime(hostNow, startHostTime, config)
+    : null;
+  beatDisplay.update({ phase, beat, config });
+}
+
+function animateBeat(): void {
+  renderBeat();
+  beatFrame = isPlaying ? requestAnimationFrame(animateBeat) : null;
+}
+
+function startPlayback(): void {
   const config = readConfig();
   scheduler.setOutputOffsetMs(readOutputOffsetMs());
   startHostTime = nowSeconds() + 2;
   latestSentHostTime = nowSeconds();
   setPlaying(true);
-  renderPlaybackStatus();
+  if (beatFrame === null) animateBeat();
   void scheduler.start(config, startHostTime, latestSentHostTime);
   webRTC.broadcastControl({ type: "start", ...config, startHostTime, sentHostTime: latestSentHostTime });
-});
+}
 
-stopButton.addEventListener("click", () => {
+function stopPlayback(): void {
   latestSentHostTime = nowSeconds();
   startHostTime = null;
   setPlaying(false);
-  renderPlaybackStatus();
+  renderBeat();
   scheduler.stop();
   webRTC.broadcastControl({ type: "stop", sentHostTime: latestSentHostTime });
+}
+
+function togglePlayback(): void {
+  if (isPlaying) stopPlayback();
+  else startPlayback();
+}
+
+playButton.addEventListener("click", togglePlayback);
+
+// Space toggles playback unless focus is on a control that uses the key itself.
+document.addEventListener("keydown", (event) => {
+  if (event.code !== "Space" || event.repeat || event.isComposing) return;
+  if (event.ctrlKey || event.metaKey || event.altKey) return;
+  if (event.target instanceof Element && event.target.closest("input, select, textarea, button, summary, a")) return;
+  if (playButton.disabled) return;
+  event.preventDefault();
+  togglePlayback();
 });
 
 function broadcastConfig(): void {
@@ -163,16 +214,11 @@ function broadcastConfig(): void {
   beatInput.value = String(config.beatsPerBar);
   scheduler.updateConfig(config);
   webRTC.broadcastControl({ type: "config", ...config });
+  renderBeat();
 }
 
 bpmInput.addEventListener("change", broadcastConfig);
 beatInput.addEventListener("change", broadcastConfig);
-outputOffsetInput.addEventListener("input", () => {
-  scheduler.setOutputOffsetMs(readOutputOffsetMs());
-});
-outputOffsetInput.addEventListener("change", () => {
-  outputOffsetInput.value = String(readOutputOffsetMs());
-});
 
 vibrationToggle.addEventListener("change", applyVibrationSetting);
 
@@ -180,26 +226,15 @@ function createRoom(): void {
   if (hasRoom || createRoomButton.disabled) return;
 
   createRoomButton.disabled = true;
-  connectionStatus.textContent = "Creating room...";
+  setStatus({ text: "部屋を作成中…", tone: "neutral" });
   signaling.connect();
 }
 
 createRoomButton.addEventListener("click", createRoom);
 
-function renderPlaybackStatus(): void {
-  const hostNow = nowSeconds();
-  const playingStart = isPlaying ? startHostTime : null;
-  const hasStarted = playingStart !== null && hostNow >= playingStart;
-  const beat = hasStarted ? scheduler.beatAtHostTime(hostNow) ?? beatAtHostTime(hostNow, playingStart, readConfig()) : null;
-  playbackStatus.textContent = playbackStatusText(hostNow, playingStart, beat?.beatInBar ?? null);
-}
-
-setInterval(() => {
-  if (isPlaying) renderPlaybackStatus();
-}, 100);
-
 setPlaying(false);
-renderPlaybackStatus();
+renderBeat();
+renderParticipants();
 vibrationNote.hidden = vibrationSupported;
 vibrationToggle.checked = false;
 applyVibrationSetting();
