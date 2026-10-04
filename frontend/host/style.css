@@ -5,6 +5,67 @@
   gap: 16px;
 }
 
+.control-group {
+  display: grid;
+  gap: 10px;
+}
+
+.control-label {
+  color: var(--label);
+  font-weight: 700;
+}
+
+.stepper {
+  display: grid;
+  grid-template-columns: auto auto minmax(64px, 1fr) auto auto;
+  gap: 6px;
+}
+
+.stepper button {
+  min-width: 44px;
+  padding: 0 8px;
+}
+
+.stepper input {
+  text-align: center;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.slider-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.meter-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.meter-presets button {
+  min-height: 36px;
+  padding: 0 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.meter-presets button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: #fff;
+  background: var(--accent);
+}
+
+.meter-inputs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  color: var(--text-secondary);
+  font-weight: 800;
+}
+
 .url-box {
   display: flex;
   align-items: center;
