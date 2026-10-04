@@ -47,9 +47,14 @@ const vibrationToggle = document.querySelector<HTMLInputElement>("#vibrationTogg
 const vibrationNote = document.querySelector<HTMLElement>("#vibrationNote")!;
 const connectionStatus = document.querySelector<HTMLElement>("#connectionStatus")!;
 const beatDisplay = new BeatDisplay(document.querySelector<HTMLElement>("#beatDisplay")!);
-const inviteBox = document.querySelector<HTMLElement>("#inviteBox")!;
-const participantUrl = document.querySelector<HTMLElement>("#participantUrl")!;
+const inviteButton = document.querySelector<HTMLButtonElement>("#inviteButton")!;
+const emptyInviteButton = document.querySelector<HTMLButtonElement>("#emptyInviteButton")!;
+const inviteDialog = document.querySelector<HTMLDialogElement>("#inviteDialog")!;
+const inviteCloseButton = document.querySelector<HTMLButtonElement>("#inviteCloseButton")!;
+const participantUrl = document.querySelector<HTMLInputElement>("#participantUrl")!;
 const participantQr = document.querySelector<HTMLElement>("#participantQr")!;
+const copyUrlButton = document.querySelector<HTMLButtonElement>("#copyUrlButton")!;
+const copyStatus = document.querySelector<HTMLElement>("#copyStatus")!;
 const participantCount = document.querySelector<HTMLElement>("#participantCount")!;
 const participantList = document.querySelector<HTMLUListElement>("#participantList")!;
 const participantsEmpty = document.querySelector<HTMLElement>("#participantsEmpty")!;
@@ -141,8 +146,10 @@ signaling.onMessage((message: SignalMessage) => {
     hasRoom = true;
     createRoomButton.disabled = true;
     createRoomButton.hidden = true;
-    void renderParticipantInvite(message.participantUrl ?? "");
-    inviteBox.hidden = false;
+    inviteButton.hidden = false;
+    emptyInviteButton.hidden = false;
+    // Inviting is the host's next step, so the dialog opens once right after the room is created.
+    void renderParticipantInvite(message.participantUrl ?? "").then(openInvite);
     setStatus({ text: "部屋を作成しました", tone: "ok" });
     setPlaying(false);
     return;
@@ -172,7 +179,7 @@ signaling.onMessage((message: SignalMessage) => {
 webRTC.onChange(renderParticipants);
 
 async function renderParticipantInvite(url: string): Promise<void> {
-  participantUrl.textContent = url;
+  participantUrl.value = url;
   participantQr.innerHTML = await QRCode.toString(url, {
     type: "svg",
     errorCorrectionLevel: "M",
@@ -183,6 +190,40 @@ async function renderParticipantInvite(url: string): Promise<void> {
     },
   });
 }
+
+function openInvite(): void {
+  copyStatus.textContent = "";
+  if (!inviteDialog.open) inviteDialog.showModal();
+}
+
+let copyStatusTimer: number | null = null;
+function showCopyStatus(text: string): void {
+  copyStatus.textContent = text;
+  if (copyStatusTimer !== null) window.clearTimeout(copyStatusTimer);
+  copyStatusTimer = window.setTimeout(() => {
+    copyStatus.textContent = "";
+    copyStatusTimer = null;
+  }, 2000);
+}
+
+inviteButton.addEventListener("click", openInvite);
+emptyInviteButton.addEventListener("click", openInvite);
+inviteCloseButton.addEventListener("click", () => inviteDialog.close());
+inviteDialog.addEventListener("click", (event) => {
+  // The dialog element itself only receives clicks on its backdrop.
+  if (event.target === inviteDialog) inviteDialog.close();
+});
+
+copyUrlButton.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(participantUrl.value);
+    showCopyStatus("コピーしました");
+  } catch {
+    // The Clipboard API is unavailable on plain-HTTP LAN addresses; leave the URL selected instead.
+    participantUrl.select();
+    showCopyStatus("URLを選択しました。コピーして共有してください");
+  }
+});
 
 function renderBeat(): void {
   const hostNow = nowSeconds();
@@ -231,7 +272,7 @@ document.addEventListener("keydown", (event) => {
   if (event.code !== "Space" || event.repeat || event.isComposing) return;
   if (event.ctrlKey || event.metaKey || event.altKey) return;
   if (event.target instanceof Element && event.target.closest("input, select, textarea, button, summary, a")) return;
-  if (playButton.disabled) return;
+  if (playButton.disabled || inviteDialog.open) return;
   event.preventDefault();
   togglePlayback();
 });
