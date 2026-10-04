@@ -66,34 +66,37 @@
   font-weight: 800;
 }
 
-.url-box {
+.invite-dialog {
+  width: min(440px, calc(100% - 32px));
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: 0 18px 44px rgba(45, 42, 32, 0.18);
+}
+
+.invite-dialog::backdrop {
+  background: rgba(32, 35, 31, 0.45);
+}
+
+.invite-dialog-body {
+  display: grid;
+  gap: 16px;
+  padding: 24px;
+}
+
+.invite-dialog-head {
   display: flex;
   align-items: center;
-  gap: 16px;
-  margin-bottom: 16px;
-  padding: 16px;
-  border: 1px solid #c9d8d3;
-  border-radius: 8px;
-  background: #f8fffc;
-}
-
-.url-box span {
-  display: block;
-  margin-bottom: 6px;
-  color: var(--text-secondary);
-  font-size: 0.84rem;
-}
-
-.url-box strong {
-  overflow-wrap: anywhere;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .qr-code {
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  width: 120px;
-  height: 120px;
+  justify-self: center;
+  width: min(100%, 360px);
+  aspect-ratio: 1;
   padding: 8px;
   border: 1px solid #d6e1dd;
   border-radius: 8px;
@@ -104,6 +107,23 @@
   display: block;
   width: 100%;
   height: 100%;
+}
+
+.invite-url {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.invite-url input {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.empty-state {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
 }
 
 .participants {
@@ -139,7 +159,7 @@
 }
 
 @media (max-width: 560px) {
-  .url-box {
-    align-items: flex-start;
+  .invite-dialog-body {
+    padding: 16px;
   }
 }

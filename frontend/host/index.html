@@ -15,6 +15,7 @@
         <div class="app-header-actions">
           <p class="status-chip" id="connectionStatus" data-tone="neutral">未接続</p>
           <button id="createRoomButton" class="compact" type="button">部屋を作成</button>
+          <button id="inviteButton" class="secondary compact" type="button" hidden>招待</button>
         </div>
       </header>
 
@@ -75,18 +76,30 @@
             <h2>参加者</h2>
             <span id="participantCount">0人接続中</span>
           </div>
-          <div id="inviteBox" class="url-box" hidden>
-            <div>
-              <span>参加者URL</span>
-              <strong id="participantUrl"></strong>
-            </div>
-            <div id="participantQr" class="qr-code" aria-label="参加者URLのQRコード"></div>
-          </div>
           <ul id="participantList" class="participants"></ul>
-          <p id="participantsEmpty" class="hint">まだ参加者はいません。</p>
+          <div id="participantsEmpty" class="empty-state">
+            <p class="hint">まだ参加者はいません。</p>
+            <button id="emptyInviteButton" class="secondary" type="button" hidden>参加者を招待</button>
+          </div>
         </section>
       </div>
     </main>
+
+    <dialog id="inviteDialog" class="invite-dialog" aria-labelledby="inviteTitle">
+      <div class="invite-dialog-body">
+        <div class="invite-dialog-head">
+          <h2 id="inviteTitle">参加者を招待</h2>
+          <button id="inviteCloseButton" class="secondary compact" type="button">閉じる</button>
+        </div>
+        <p class="hint">参加者にQRコードを読み取ってもらうか、URLを共有してください。</p>
+        <div id="participantQr" class="qr-code" role="img" aria-label="参加者URLのQRコード"></div>
+        <div class="invite-url">
+          <input id="participantUrl" type="text" readonly aria-label="参加者URL" />
+          <button id="copyUrlButton" type="button">URLをコピー</button>
+        </div>
+        <p id="copyStatus" class="hint" role="status"></p>
+      </div>
+    </dialog>
 
     <script type="module" src="./main.ts"></script>
   </body>
