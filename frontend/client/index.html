@@ -3,41 +3,61 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>P2P Sync Metronome Client</title>
+    <title>参加者 | P2P同期メトロノーム</title>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
     <main class="shell">
-      <section class="panel hero">
-        <p class="eyebrow">Participant</p>
-        <h1>P2P同期メトロノーム</h1>
-        <p id="connectionStatus">Disconnected</p>
+      <header class="app-header">
+        <a class="app-title" href="/">P2P同期メトロノーム</a>
+        <span class="app-role">参加者</span>
+        <div class="app-header-actions">
+          <p class="status-chip" id="connectionStatus" data-tone="neutral">未接続</p>
+          <button id="reconnectButton" class="secondary compact" type="button" hidden>再接続</button>
+        </div>
+      </header>
+
+      <section id="audioGate" class="panel audio-gate">
+        <h2>音を有効にしてください</h2>
+        <p class="hint">ブラウザの制限により、音を鳴らすには一度ボタンを押す必要があります。</p>
+        <button id="audioButton" class="play-button" type="button">音を有効にする</button>
       </section>
 
-      <section class="grid">
-        <section class="panel controls">
-          <button id="audioButton" type="button">Enable Audio</button>
-          <label>
-            発声補正 ms
-            <input id="outputOffsetInput" type="number" min="-200" max="200" step="1" value="0" />
-          </label>
+      <div class="layout">
+        <section class="panel player" aria-label="演奏">
+          <div id="beatDisplay"></div>
+          <p class="status-chip sync-status" id="syncStatus" data-tone="neutral">待機中</p>
+        </section>
+
+        <section class="panel settings">
+          <h2>設定</h2>
+          <p id="audioState" class="audio-state" hidden>音声オン ✓</p>
           <label class="toggle">
             <input id="vibrationToggle" type="checkbox" />
             <span>バイブレーション</span>
             <small id="vibrationNote" class="toggle-note" hidden>この端末は非対応</small>
           </label>
-          <strong id="syncStatus">waiting</strong>
+          <details>
+            <summary>詳細設定</summary>
+            <div class="details-body">
+              <label for="outputOffsetInput">発声補正 (ms)</label>
+              <div class="offset-control">
+                <input id="outputOffsetRange" type="range" min="-200" max="200" step="1" value="0" aria-label="発声補正 (ms)" />
+                <input id="outputOffsetInput" type="number" min="-200" max="200" step="1" value="0" />
+              </div>
+              <p class="hint">この端末の音が他の端末より早く聞こえるときはプラス、遅く聞こえるときはマイナスに調整します。</p>
+            </div>
+          </details>
+          <details>
+            <summary>接続の詳細</summary>
+            <dl class="details-body connection-details">
+              <div><dt>RTT</dt><dd id="rttValue">--</dd></div>
+              <div><dt>offset</dt><dd id="offsetValue">--</dd></div>
+              <div><dt>jitter</dt><dd id="jitterValue">--</dd></div>
+            </dl>
+          </details>
         </section>
-
-        <section class="panel metrics">
-          <div><span>BPM</span><strong id="bpmValue">--</strong></div>
-          <div><span>beat</span><strong id="meterValue">--</strong></div>
-          <div><span>現在拍</span><strong id="beatValue">--</strong></div>
-          <div><span>RTT</span><strong id="rttValue">--</strong></div>
-          <div><span>offset</span><strong id="offsetValue">--</strong></div>
-          <div><span>jitter</span><strong id="jitterValue">--</strong></div>
-        </section>
-      </section>
+      </div>
     </main>
 
     <script type="module" src="./main.ts"></script>

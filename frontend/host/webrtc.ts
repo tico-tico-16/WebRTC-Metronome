@@ -12,6 +12,7 @@ export type HostPeer = {
   rtt: number | null;
   offset: number | null;
   jitter: number | null;
+  sampleCount: number;
 };
 
 type StateProvider = () => {
@@ -43,7 +44,7 @@ export class HostWebRTC {
     const pc = new RTCPeerConnection(RTC_CONFIGURATION);
     const control = pc.createDataChannel("control", { ordered: true });
     const sync = pc.createDataChannel("sync", { ordered: false, maxRetransmits: 0 });
-    const peer: HostPeer = { id: clientId, name, pc, control, sync, status: "connecting", rtt: null, offset: null, jitter: null };
+    const peer: HostPeer = { id: clientId, name, pc, control, sync, status: "connecting", rtt: null, offset: null, jitter: null, sampleCount: 0 };
     this.peers.set(clientId, peer);
 
     pc.addEventListener("icecandidate", (event) => {
@@ -68,6 +69,7 @@ export class HostWebRTC {
         peer.rtt = message.rtt;
         peer.offset = message.offset;
         peer.jitter = message.jitter;
+        peer.sampleCount = message.sampleCount;
         this.emitChange();
         return;
       }

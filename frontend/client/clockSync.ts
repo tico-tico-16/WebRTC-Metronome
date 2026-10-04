@@ -1,4 +1,5 @@
 import type { SyncMessage } from "../../shared/types.ts";
+import { isClockStable } from "../shared/clockStability.ts";
 
 export type ClockStats = {
   rtt: number | null;
@@ -71,7 +72,7 @@ export class ClockSync {
       offset: averageOffset,
       jitter,
       sampleCount: this.offsets.length,
-      stable: this.offsets.length >= 5 && jitter < 0.025,
+      stable: isClockStable(this.offsets.length, jitter),
     };
 
     return {
