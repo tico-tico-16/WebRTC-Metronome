@@ -55,6 +55,16 @@ describe.serial("metronome public behavior", () => {
         });
       }
 
+      test("reports the beat position and the delay until a click is heard", async () => {
+        const { scheduler, start } = create(role);
+        scheduler.setOutputOffsetMs(30);
+        await start();
+        browser.contexts[0]!.outputLatency = 0.02;
+        expect(scheduler.audibleDelaySeconds()).toBeCloseTo(0.05, 8);
+        browser.timers.advanceTo(1100);
+        expect(scheduler.beatPositionAtHostTime(1.25)).toEqual({ beatIndex: 0, beatInBar: 1, secondsPerBeat: 0.5, progress: 0.5 });
+      });
+
       test("starts on the next beat when joining late", async () => {
         browser.timers.nowMs = 1600;
         const { scheduler, start } = create(role);

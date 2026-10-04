@@ -1,7 +1,7 @@
 import type { MetronomeConfig, SignalMessage } from "../../shared/types.ts";
 import QRCode from "qrcode";
 import { nowSeconds } from "./clockSync.ts";
-import { beatAtHostTime, HostMetronomeScheduler } from "./metronome.ts";
+import { beatPositionAt, HostMetronomeScheduler } from "./metronome.ts";
 import { SignalingClient } from "./signaling.ts";
 import { connectedPeerCount, peerStatusLabel } from "./status.ts";
 import { HostWebRTC } from "./webrtc.ts";
@@ -226,11 +226,12 @@ copyUrlButton.addEventListener("click", async () => {
 });
 
 function renderBeat(): void {
-  const hostNow = nowSeconds();
-  const phase = playbackPhase(hostNow, isPlaying ? startHostTime : null);
+  // Draw what is being heard: a click sounds this long after its beat's host time.
+  const displayTime = nowSeconds() - scheduler.audibleDelaySeconds();
+  const phase = playbackPhase(displayTime, isPlaying ? startHostTime : null);
   const config = appliedConfig;
   const beat = phase.kind === "playing"
-    ? scheduler.beatAtHostTime(hostNow) ?? beatAtHostTime(hostNow, startHostTime, config)
+    ? scheduler.beatPositionAtHostTime(displayTime) ?? beatPositionAt(displayTime, startHostTime, config)
     : null;
   beatDisplay.update({ phase, beat, config });
 }

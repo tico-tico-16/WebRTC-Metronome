@@ -1,4 +1,4 @@
-import type { BeatInfo, MetronomeConfig } from "../../../shared/types.ts";
+import type { BeatInfo, BeatPosition, MetronomeConfig } from "../../../shared/types.ts";
 import { advanceBeatInBar, beatInBarForIndex, clampBeatInBar, secondsPerBeat } from "./beat.ts";
 
 const SCHEDULE_INTERVAL_MS = 25;
@@ -19,6 +19,8 @@ export type MetronomeDependencies = {
   audio: {
     currentTime: () => number | null;
     click: (time: number, accented: boolean) => void;
+    /** Seconds between a scheduled time and the sound leaving the speaker. */
+    outputLatency: () => number;
   };
   vibration: {
     setEnabled: (enabled: boolean) => void;
@@ -76,12 +78,27 @@ export class MetronomeEngine {
   }
 
   beatAtHostTime(hostTime: number): BeatInfo | null {
-    let current: ScheduledBeat | null = null;
-    for (const beat of this.scheduledBeats) {
-      if (beat.hostTime <= hostTime) current = beat;
-    }
+    const current = this.scheduledBeatAt(hostTime);
     if (!current) return null;
     return { beatIndex: current.beatIndex, beatInBar: current.beatInBar, secondsPerBeat: current.secondsPerBeat };
+  }
+
+  /** Position within the scheduled beat at hostTime; it stays at 1 past the last scheduled beat. */
+  beatPositionAtHostTime(hostTime: number): BeatPosition | null {
+    const current = this.scheduledBeatAt(hostTime);
+    if (!current) return null;
+    const progress = (hostTime - current.hostTime) / current.secondsPerBeat;
+    return {
+      beatIndex: current.beatIndex,
+      beatInBar: current.beatInBar,
+      secondsPerBeat: current.secondsPerBeat,
+      progress: Math.min(1, Math.max(0, progress)),
+    };
+  }
+
+  /** How long after a beat's host time its click is heard: output offset plus device output latency. */
+  audibleDelaySeconds(): number {
+    return this.outputOffsetSeconds + this.dependencies.audio.outputLatency();
   }
 
   nextStrongBeatHostTime(atHostTime: number): number | null {
@@ -99,6 +116,14 @@ export class MetronomeEngine {
       beatInBar = advanceBeatInBar(beatInBar, this.config.beatsPerBar);
     }
     return beatHostTime;
+  }
+
+  private scheduledBeatAt(hostTime: number): ScheduledBeat | null {
+    let current: ScheduledBeat | null = null;
+    for (const beat of this.scheduledBeats) {
+      if (beat.hostTime <= hostTime) current = beat;
+    }
+    return current;
   }
 
   private scheduleAhead(): void {

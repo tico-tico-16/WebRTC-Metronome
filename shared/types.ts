@@ -46,3 +46,6 @@ export type BeatInfo = {
   beatInBar: number;
   secondsPerBeat: number;
 };
+
+/** A beat plus how far through it a moment is, from 0 at the beat to 1 at the next. */
+export type BeatPosition = BeatInfo & { progress: number };

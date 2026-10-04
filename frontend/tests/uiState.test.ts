@@ -4,7 +4,8 @@ import { playbackPhase } from "../shared/ui/playback.ts";
 import {
   connectionLabel,
   isConnectionLost,
-  meterLabel,
+  formatBpm,
+  meterText,
   participantSyncLabel,
   signalingErrorLabel,
 } from "../shared/ui/labels.ts";
@@ -72,10 +73,16 @@ describe("labels", () => {
     expect(participantSyncLabel({ ...base, isPlaying: true })).toEqual({ text: "再生中", tone: "ok" });
   });
 
-  test("shows the meter and tempo, with beat 0 meaning no accent", () => {
-    expect(meterLabel({ bpm: 120, beatsPerBar: 4, beatUnit: 4 })).toBe("4/4 · BPM 120");
-    expect(meterLabel({ bpm: 120.5, beatsPerBar: 6, beatUnit: 8 })).toBe("6/8 · BPM 120.5");
-    expect(meterLabel({ bpm: 96, beatsPerBar: 0, beatUnit: 4 })).toBe("強拍なし · BPM 96");
+  test("shows the meter, with beat 0 meaning no accent", () => {
+    expect(meterText({ bpm: 120, beatsPerBar: 4, beatUnit: 4 })).toBe("4/4");
+    expect(meterText({ bpm: 120, beatsPerBar: 6, beatUnit: 8 })).toBe("6/8");
+    expect(meterText({ bpm: 96, beatsPerBar: 0, beatUnit: 4 })).toBe("強拍なし");
+  });
+
+  test("formats BPM with at most one decimal place", () => {
+    expect(formatBpm(120)).toBe("120");
+    expect(formatBpm(120.5)).toBe("120.5");
+    expect(formatBpm(120.04)).toBe("120");
   });
 });
 

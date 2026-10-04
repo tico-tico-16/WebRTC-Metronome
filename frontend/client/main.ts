@@ -1,6 +1,6 @@
 import type { ControlMessage, MetronomeConfig, SignalMessage } from "../../shared/types.ts";
 import { ClockSync } from "./clockSync.ts";
-import { beatAtHostTime, MetronomeScheduler } from "./metronome.ts";
+import { beatPositionAt, MetronomeScheduler } from "./metronome.ts";
 import { SignalingClient } from "./signaling.ts";
 import { ClientWebRTC } from "./webrtc.ts";
 import { BeatDisplay } from "../shared/ui/beatDisplay.ts";
@@ -64,10 +64,11 @@ function formatMs(seconds: number | null): string {
 }
 
 function renderBeat(): void {
-  const hostNow = clockSync.hostNow();
-  const phase = playbackPhase(hostNow, isPlaying ? startHostTime : null);
+  // Draw what is being heard: a click sounds this long after its beat's host time.
+  const displayTime = clockSync.hostNow() - scheduler.audibleDelaySeconds();
+  const phase = playbackPhase(displayTime, isPlaying ? startHostTime : null);
   const beat = phase.kind === "playing"
-    ? scheduler.beatAtHostTime(hostNow) ?? beatAtHostTime(hostNow, startHostTime, config)
+    ? scheduler.beatPositionAtHostTime(displayTime) ?? beatPositionAt(displayTime, startHostTime, config)
     : null;
   beatDisplay.update({ phase, beat, config });
 }

@@ -106,6 +106,7 @@ export class FakeAudioContext {
   readonly destination = {};
   readonly oscillators: FakeOscillator[] = [];
   readonly gains: FakeGain[] = [];
+  outputLatency = 0;
   resumeCount = 0;
 
   constructor(private browser: FakeBrowser) {}

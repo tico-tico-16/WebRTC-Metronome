@@ -46,7 +46,10 @@ export function participantSyncLabel(state: {
 }
 
 /** Beats per bar 0 means no accented downbeat. */
-export function meterLabel(config: MetronomeConfig): string {
-  const meter = config.beatsPerBar > 0 ? `${config.beatsPerBar}/${config.beatUnit}` : "強拍なし";
-  return `${meter} · BPM ${Math.round(config.bpm * 10) / 10}`;
+export function meterText(config: MetronomeConfig): string {
+  return config.beatsPerBar > 0 ? `${config.beatsPerBar}/${config.beatUnit}` : "強拍なし";
+}
+
+export function formatBpm(bpm: number): string {
+  return String(Math.round(bpm * 10) / 10);
 }
