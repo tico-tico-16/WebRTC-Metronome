@@ -79,6 +79,10 @@ function readConfig(): MetronomeConfig {
   };
 }
 
+// The last committed settings. The scheduler, broadcasts and late-join snapshots use these,
+// never a value still being typed or dragged in the controls.
+let appliedConfig = readConfig();
+
 function setStatus(label: StatusLabel): void {
   connectionStatus.textContent = label.text;
   connectionStatus.dataset.tone = label.tone;
@@ -99,7 +103,7 @@ const webRTC = new HostWebRTC(
   (message) => signaling.send(message),
   () => ({
     isPlaying,
-    config: readConfig(),
+    config: appliedConfig,
     startHostTime: isPlaying ? scheduler.nextStrongBeatHostTime(nowSeconds()) ?? startHostTime : startHostTime,
     sentHostTime: nowSeconds(),
   }),
@@ -183,7 +187,7 @@ async function renderParticipantInvite(url: string): Promise<void> {
 function renderBeat(): void {
   const hostNow = nowSeconds();
   const phase = playbackPhase(hostNow, isPlaying ? startHostTime : null);
-  const config = readConfig();
+  const config = appliedConfig;
   const beat = phase.kind === "playing"
     ? scheduler.beatAtHostTime(hostNow) ?? beatAtHostTime(hostNow, startHostTime, config)
     : null;
@@ -196,7 +200,7 @@ function animateBeat(): void {
 }
 
 function startPlayback(): void {
-  const config = readConfig();
+  const config = appliedConfig;
   scheduler.setOutputOffsetMs(readOutputOffsetMs());
   startHostTime = nowSeconds() + 2;
   latestSentHostTime = nowSeconds();
@@ -235,7 +239,8 @@ document.addEventListener("keydown", (event) => {
 /** Writes the applied values back to every control so they all agree with what is sent. */
 function showConfig(config: MetronomeConfig): void {
   bpmInput.value = String(config.bpm);
-  bpmRange.value = String(config.bpm);
+  // The slider moves in whole BPM; a decimal typed into the number field sits at the nearest step.
+  bpmRange.value = String(Math.round(config.bpm));
   beatInput.value = String(config.beatsPerBar);
   beatUnitInput.value = String(config.beatUnit);
   for (const { preset, button } of meterPresetButtons) {
@@ -245,10 +250,10 @@ function showConfig(config: MetronomeConfig): void {
 }
 
 function broadcastConfig(): void {
-  const config = readConfig();
-  showConfig(config);
-  scheduler.updateConfig(config);
-  webRTC.broadcastControl({ type: "config", ...config });
+  appliedConfig = readConfig();
+  showConfig(appliedConfig);
+  scheduler.updateConfig(appliedConfig);
+  webRTC.broadcastControl({ type: "config", ...appliedConfig });
   renderBeat();
 }
 
@@ -258,13 +263,12 @@ function setBpm(bpm: number): void {
 }
 
 document.querySelectorAll<HTMLButtonElement>("[data-bpm-step]").forEach((button) => {
-  button.addEventListener("click", () => setBpm(stepBpm(readConfig().bpm, Number(button.dataset.bpmStep))));
+  button.addEventListener("click", () => setBpm(stepBpm(appliedConfig.bpm, Number(button.dataset.bpmStep))));
 });
 
-// While dragging only the display follows; the tempo is sent once the slider is released.
+// While dragging only the number field follows; the tempo is applied and sent once the slider is released.
 bpmRange.addEventListener("input", () => {
   bpmInput.value = bpmRange.value;
-  renderBeat();
 });
 bpmRange.addEventListener("change", broadcastConfig);
 
@@ -292,7 +296,7 @@ function createRoom(): void {
 createRoomButton.addEventListener("click", createRoom);
 
 setPlaying(false);
-showConfig(readConfig());
+showConfig(appliedConfig);
 renderBeat();
 renderParticipants();
 vibrationNote.hidden = vibrationSupported;
