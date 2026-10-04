@@ -3,6 +3,7 @@ import { ClockSync } from "./clockSync.ts";
 import { beatAtHostTime, MetronomeScheduler } from "./metronome.ts";
 import { SignalingClient } from "./signaling.ts";
 import { ClientWebRTC } from "./webrtc.ts";
+import { normalizeOutputOffsetMs } from "../shared/controlValues.ts";
 
 const audioButton = document.querySelector<HTMLButtonElement>("#audioButton")!;
 const connectionStatus = document.querySelector<HTMLElement>("#connectionStatus")!;
@@ -15,6 +16,7 @@ const offsetValue = document.querySelector<HTMLElement>("#offsetValue")!;
 const jitterValue = document.querySelector<HTMLElement>("#jitterValue")!;
 const outputOffsetInput = document.querySelector<HTMLInputElement>("#outputOffsetInput")!;
 const vibrationToggle = document.querySelector<HTMLInputElement>("#vibrationToggle")!;
+const vibrationNote = document.querySelector<HTMLElement>("#vibrationNote")!;
 const roomId = new URLSearchParams(location.search).get("room")?.trim() ?? "";
 const vibrationSupported = "vibrate" in navigator;
 
@@ -24,7 +26,7 @@ const clockSync = new ClockSync((message) => webRTC.sendSync(message));
 const scheduler = new MetronomeScheduler();
 
 function readOutputOffsetMs(): number {
-  return Math.max(-200, Math.min(200, Number(outputOffsetInput.value) || 0));
+  return normalizeOutputOffsetMs(outputOffsetInput.value);
 }
 
 function applyVibrationSetting(): void {
@@ -209,6 +211,8 @@ function joinSharedRoom(): void {
 audioButton.addEventListener("click", () => {
   void scheduler.enableAudio().then(() => {
     audioButton.disabled = true;
+    audioButton.textContent = "Audio enabled ✓";
+    audioButton.classList.add("enabled");
     startWhenStable();
     render();
   });
@@ -217,9 +221,13 @@ audioButton.addEventListener("click", () => {
 outputOffsetInput.addEventListener("input", () => {
   scheduler.setOutputOffsetMs(readOutputOffsetMs());
 });
+outputOffsetInput.addEventListener("change", () => {
+  outputOffsetInput.value = String(readOutputOffsetMs());
+});
 
 vibrationToggle.addEventListener("change", applyVibrationSetting);
 
+vibrationNote.hidden = vibrationSupported;
 vibrationToggle.checked = false;
 vibrationToggle.disabled = !vibrationSupported;
 applyVibrationSetting();

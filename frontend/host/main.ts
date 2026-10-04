@@ -3,7 +3,9 @@ import QRCode from "qrcode";
 import { nowSeconds } from "./clockSync.ts";
 import { beatAtHostTime, HostMetronomeScheduler } from "./metronome.ts";
 import { SignalingClient } from "./signaling.ts";
+import { connectedPeerCount, playbackStatusText } from "./status.ts";
 import { HostWebRTC } from "./webrtc.ts";
+import { normalizeBeatsPerBar, normalizeBpm, normalizeOutputOffsetMs } from "../shared/controlValues.ts";
 
 const bpmInput = document.querySelector<HTMLInputElement>("#bpmInput")!;
 const beatInput = document.querySelector<HTMLInputElement>("#beatInput")!;
@@ -12,7 +14,9 @@ const stopButton = document.querySelector<HTMLButtonElement>("#stopButton")!;
 const createRoomButton = document.querySelector<HTMLButtonElement>("#createRoomButton")!;
 const outputOffsetInput = document.querySelector<HTMLInputElement>("#outputOffsetInput")!;
 const vibrationToggle = document.querySelector<HTMLInputElement>("#vibrationToggle")!;
+const vibrationNote = document.querySelector<HTMLElement>("#vibrationNote")!;
 const connectionStatus = document.querySelector<HTMLElement>("#connectionStatus")!;
+const playbackStatus = document.querySelector<HTMLElement>("#playbackStatus")!;
 const inviteBox = document.querySelector<HTMLElement>("#inviteBox")!;
 const participantUrl = document.querySelector<HTMLElement>("#participantUrl")!;
 const participantQr = document.querySelector<HTMLElement>("#participantQr")!;
@@ -29,7 +33,7 @@ let latestSentHostTime = nowSeconds();
 const scheduler = new HostMetronomeScheduler();
 
 function readOutputOffsetMs(): number {
-  return Math.max(-200, Math.min(200, Number(outputOffsetInput.value) || 0));
+  return normalizeOutputOffsetMs(outputOffsetInput.value);
 }
 
 function applyVibrationSetting(): void {
@@ -37,11 +41,9 @@ function applyVibrationSetting(): void {
 }
 
 function readConfig(): MetronomeConfig {
-  const beatValue = Number(beatInput.value);
-  const beatsPerBar = Number.isFinite(beatValue) ? Math.max(0, Math.floor(beatValue)) : 4;
   return {
-    bpm: Math.max(30, Math.min(240, Number(bpmInput.value) || 120)),
-    beatsPerBar,
+    bpm: normalizeBpm(bpmInput.value),
+    beatsPerBar: normalizeBeatsPerBar(beatInput.value),
     beatUnit: 4,
   };
 }
@@ -69,7 +71,7 @@ const webRTC = new HostWebRTC(
 
 function renderParticipants(): void {
   participantList.innerHTML = "";
-  participantCount.textContent = `${webRTC.peers.size} connected`;
+  participantCount.textContent = `${connectedPeerCount(webRTC.peers.values())} connected`;
 
   for (const peer of webRTC.peers.values()) {
     const item = document.createElement("li");
@@ -141,7 +143,7 @@ startButton.addEventListener("click", () => {
   startHostTime = nowSeconds() + 2;
   latestSentHostTime = nowSeconds();
   setPlaying(true);
-  connectionStatus.textContent = "Starting in 2 seconds";
+  renderPlaybackStatus();
   void scheduler.start(config, startHostTime, latestSentHostTime);
   webRTC.broadcastControl({ type: "start", ...config, startHostTime, sentHostTime: latestSentHostTime });
 });
@@ -150,13 +152,15 @@ stopButton.addEventListener("click", () => {
   latestSentHostTime = nowSeconds();
   startHostTime = null;
   setPlaying(false);
-  connectionStatus.textContent = "Stopped";
+  renderPlaybackStatus();
   scheduler.stop();
   webRTC.broadcastControl({ type: "stop", sentHostTime: latestSentHostTime });
 });
 
 function broadcastConfig(): void {
   const config = readConfig();
+  bpmInput.value = String(config.bpm);
+  beatInput.value = String(config.beatsPerBar);
   scheduler.updateConfig(config);
   webRTC.broadcastControl({ type: "config", ...config });
 }
@@ -165,6 +169,9 @@ bpmInput.addEventListener("change", broadcastConfig);
 beatInput.addEventListener("change", broadcastConfig);
 outputOffsetInput.addEventListener("input", () => {
   scheduler.setOutputOffsetMs(readOutputOffsetMs());
+});
+outputOffsetInput.addEventListener("change", () => {
+  outputOffsetInput.value = String(readOutputOffsetMs());
 });
 
 vibrationToggle.addEventListener("change", applyVibrationSetting);
@@ -179,13 +186,21 @@ function createRoom(): void {
 
 createRoomButton.addEventListener("click", createRoom);
 
+function renderPlaybackStatus(): void {
+  const hostNow = nowSeconds();
+  const playingStart = isPlaying ? startHostTime : null;
+  const hasStarted = playingStart !== null && hostNow >= playingStart;
+  const beat = hasStarted ? scheduler.beatAtHostTime(hostNow) ?? beatAtHostTime(hostNow, playingStart, readConfig()) : null;
+  playbackStatus.textContent = playbackStatusText(hostNow, playingStart, beat?.beatInBar ?? null);
+}
+
 setInterval(() => {
-  if (!isPlaying) return;
-  const beat = scheduler.beatAtHostTime(nowSeconds()) ?? beatAtHostTime(nowSeconds(), startHostTime, readConfig());
-  connectionStatus.textContent = `Playing beat ${beat.beatInBar}`;
+  if (isPlaying) renderPlaybackStatus();
 }, 100);
 
 setPlaying(false);
+renderPlaybackStatus();
+vibrationNote.hidden = vibrationSupported;
 vibrationToggle.checked = false;
 applyVibrationSetting();
 

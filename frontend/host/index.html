@@ -33,7 +33,7 @@
           </label>
           <label>
             beat
-            <input id="beatInput" type="number" min="0" step="1" value="4" />
+            <input id="beatInput" type="number" min="0" max="16" step="1" value="4" />
           </label>
           <label class="wide">
             発声補正 ms
@@ -42,7 +42,9 @@
           <label class="wide toggle">
             <input id="vibrationToggle" type="checkbox" />
             <span>バイブレーション</span>
+            <small id="vibrationNote" class="toggle-note" hidden>この端末は非対応</small>
           </label>
+          <p id="playbackStatus" class="wide playback-status">Stopped</p>
           <button id="startButton" type="button">Start</button>
           <button id="stopButton" type="button">Stop</button>
         </form>
