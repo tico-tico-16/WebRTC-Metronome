@@ -5,14 +5,40 @@ import { beatAtHostTime, HostMetronomeScheduler } from "./metronome.ts";
 import { SignalingClient } from "./signaling.ts";
 import { connectedPeerCount, peerStatusLabel } from "./status.ts";
 import { HostWebRTC } from "./webrtc.ts";
-import { normalizeBeatsPerBar, normalizeBpm } from "../shared/controlValues.ts";
+import {
+  METER_PRESETS,
+  normalizeBeatsPerBar,
+  normalizeBeatUnit,
+  normalizeBpm,
+  recordTap,
+  stepBpm,
+  tapTempoBpm,
+} from "../shared/controlValues.ts";
 import { BeatDisplay } from "../shared/ui/beatDisplay.ts";
 import { signalingErrorLabel, type StatusLabel } from "../shared/ui/labels.ts";
 import { bindOutputOffsetControl } from "../shared/ui/outputOffsetControl.ts";
 import { playbackPhase } from "../shared/ui/playback.ts";
 
 const bpmInput = document.querySelector<HTMLInputElement>("#bpmInput")!;
+const bpmRange = document.querySelector<HTMLInputElement>("#bpmRange")!;
+const tapButton = document.querySelector<HTMLButtonElement>("#tapButton")!;
 const beatInput = document.querySelector<HTMLInputElement>("#beatInput")!;
+const beatUnitInput = document.querySelector<HTMLSelectElement>("#beatUnitInput")!;
+const meterPresetButtons = METER_PRESETS.map((preset) => {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "secondary";
+  button.textContent = `${preset.beatsPerBar}/${preset.beatUnit}`;
+  button.dataset.requiresRoom = "";
+  button.addEventListener("click", () => {
+    beatInput.value = String(preset.beatsPerBar);
+    beatUnitInput.value = String(preset.beatUnit);
+    broadcastConfig();
+  });
+  return { preset, button };
+});
+document.querySelector<HTMLElement>("#meterPresets")!.append(...meterPresetButtons.map(({ button }) => button));
+const roomControls = document.querySelectorAll<HTMLButtonElement | HTMLInputElement | HTMLSelectElement>("[data-requires-room]");
 const playButton = document.querySelector<HTMLButtonElement>("#playButton")!;
 const createRoomButton = document.querySelector<HTMLButtonElement>("#createRoomButton")!;
 const outputOffsetInput = document.querySelector<HTMLInputElement>("#outputOffsetInput")!;
@@ -49,7 +75,7 @@ function readConfig(): MetronomeConfig {
   return {
     bpm: normalizeBpm(bpmInput.value),
     beatsPerBar: normalizeBeatsPerBar(beatInput.value),
-    beatUnit: 4,
+    beatUnit: normalizeBeatUnit(beatUnitInput.value),
   };
 }
 
@@ -60,12 +86,10 @@ function setStatus(label: StatusLabel): void {
 
 function setPlaying(nextPlaying: boolean): void {
   isPlaying = nextPlaying;
-  bpmInput.disabled = !hasRoom;
-  beatInput.disabled = !hasRoom;
-  outputOffsetInput.disabled = !hasRoom;
-  outputOffsetRange.disabled = !hasRoom;
+  roomControls.forEach((control) => {
+    control.disabled = !hasRoom;
+  });
   vibrationToggle.disabled = !hasRoom || !vibrationSupported;
-  playButton.disabled = !hasRoom;
   playButton.textContent = nextPlaying ? "停止" : "再生";
   playButton.classList.toggle("is-playing", nextPlaying);
 }
@@ -208,17 +232,52 @@ document.addEventListener("keydown", (event) => {
   togglePlayback();
 });
 
+/** Writes the applied values back to every control so they all agree with what is sent. */
+function showConfig(config: MetronomeConfig): void {
+  bpmInput.value = String(config.bpm);
+  bpmRange.value = String(config.bpm);
+  beatInput.value = String(config.beatsPerBar);
+  beatUnitInput.value = String(config.beatUnit);
+  for (const { preset, button } of meterPresetButtons) {
+    const selected = preset.beatsPerBar === config.beatsPerBar && preset.beatUnit === config.beatUnit;
+    button.setAttribute("aria-pressed", String(selected));
+  }
+}
+
 function broadcastConfig(): void {
   const config = readConfig();
-  bpmInput.value = String(config.bpm);
-  beatInput.value = String(config.beatsPerBar);
+  showConfig(config);
   scheduler.updateConfig(config);
   webRTC.broadcastControl({ type: "config", ...config });
   renderBeat();
 }
 
+function setBpm(bpm: number): void {
+  bpmInput.value = String(bpm);
+  broadcastConfig();
+}
+
+document.querySelectorAll<HTMLButtonElement>("[data-bpm-step]").forEach((button) => {
+  button.addEventListener("click", () => setBpm(stepBpm(readConfig().bpm, Number(button.dataset.bpmStep))));
+});
+
+// While dragging only the display follows; the tempo is sent once the slider is released.
+bpmRange.addEventListener("input", () => {
+  bpmInput.value = bpmRange.value;
+  renderBeat();
+});
+bpmRange.addEventListener("change", broadcastConfig);
+
+let taps: number[] = [];
+tapButton.addEventListener("click", () => {
+  taps = recordTap(taps, performance.now());
+  const bpm = tapTempoBpm(taps);
+  if (bpm !== null) setBpm(bpm);
+});
+
 bpmInput.addEventListener("change", broadcastConfig);
 beatInput.addEventListener("change", broadcastConfig);
+beatUnitInput.addEventListener("change", broadcastConfig);
 
 vibrationToggle.addEventListener("change", applyVibrationSetting);
 
@@ -233,6 +292,7 @@ function createRoom(): void {
 createRoomButton.addEventListener("click", createRoom);
 
 setPlaying(false);
+showConfig(readConfig());
 renderBeat();
 renderParticipants();
 vibrationNote.hidden = vibrationSupported;

@@ -21,17 +21,36 @@
       <div class="layout">
         <section class="panel player" aria-label="演奏">
           <div id="beatDisplay"></div>
-          <button id="playButton" class="play-button" type="button">再生</button>
+          <button id="playButton" class="play-button" type="button" data-requires-room>再生</button>
           <p class="hint">Space キーでも再生・停止できます</p>
-          <div class="field-row">
-            <label>
-              BPM
-              <input id="bpmInput" type="number" min="30" max="240" value="120" />
-            </label>
-            <label>
-              拍子
-              <input id="beatInput" type="number" min="0" max="16" step="1" value="4" />
-            </label>
+          <div class="control-group">
+            <span class="control-label" id="bpmLabel">BPM</span>
+            <div class="stepper" role="group" aria-labelledby="bpmLabel">
+              <button class="secondary" type="button" data-bpm-step="-5" data-requires-room aria-label="BPMを5下げる">−5</button>
+              <button class="secondary" type="button" data-bpm-step="-1" data-requires-room aria-label="BPMを1下げる">−1</button>
+              <input id="bpmInput" type="number" min="30" max="240" value="120" inputmode="decimal" aria-labelledby="bpmLabel" data-requires-room />
+              <button class="secondary" type="button" data-bpm-step="1" data-requires-room aria-label="BPMを1上げる">+1</button>
+              <button class="secondary" type="button" data-bpm-step="5" data-requires-room aria-label="BPMを5上げる">+5</button>
+            </div>
+            <div class="slider-row">
+              <input id="bpmRange" type="range" min="30" max="240" step="1" value="120" aria-label="BPM" data-requires-room />
+              <button id="tapButton" class="secondary" type="button" data-requires-room>タップ</button>
+            </div>
+          </div>
+          <div class="control-group">
+            <span class="control-label" id="meterLabel">拍子</span>
+            <div class="meter-presets" role="group" aria-labelledby="meterLabel" id="meterPresets"></div>
+            <div class="meter-inputs">
+              <input id="beatInput" type="number" min="0" max="16" step="1" value="4" aria-label="拍子の分子（0は強拍なし）" data-requires-room />
+              <span aria-hidden="true">/</span>
+              <select id="beatUnitInput" aria-label="拍子の分母" data-requires-room>
+                <option value="2">2</option>
+                <option value="4" selected>4</option>
+                <option value="8">8</option>
+                <option value="16">16</option>
+              </select>
+            </div>
+            <p class="hint">BPM は分母の音符の数です。分子を 0 にすると強拍なしになります。</p>
           </div>
           <label class="toggle">
             <input id="vibrationToggle" type="checkbox" />
@@ -43,8 +62,8 @@
             <div class="details-body">
               <label for="outputOffsetInput">発声補正 (ms)</label>
               <div class="offset-control">
-                <input id="outputOffsetRange" type="range" min="-200" max="200" step="1" value="0" aria-label="発声補正 (ms)" />
-                <input id="outputOffsetInput" type="number" min="-200" max="200" step="1" value="0" />
+                <input id="outputOffsetRange" type="range" min="-200" max="200" step="1" value="0" aria-label="発声補正 (ms)" data-requires-room />
+                <input id="outputOffsetInput" type="number" min="-200" max="200" step="1" value="0" data-requires-room />
               </div>
               <p class="hint">この端末の音が他の端末より早く聞こえるときはプラス、遅く聞こえるときはマイナスに調整します。</p>
             </div>

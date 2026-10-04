@@ -267,12 +267,6 @@ select:disabled {
   background: var(--neutral-strong);
 }
 
-.field-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-
 .toggle {
   display: flex;
   flex-wrap: wrap;

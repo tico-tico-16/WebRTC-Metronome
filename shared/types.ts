@@ -19,8 +19,6 @@ export type SignalMessage =
   | { type: "ice"; to: string; from?: string; candidate: RTCIceCandidateInit }
   | { type: "error"; message: string };
 
-export type MeterKey = "3/4" | "4/4" | "5/4" | "6/8";
-
 export type MetronomeConfig = {
   bpm: number;
   beatsPerBar: number;
