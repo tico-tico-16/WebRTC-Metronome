@@ -1,4 +1,4 @@
-import type { BeatInfo, MetronomeConfig } from "../../../shared/types.ts";
+import type { BeatInfo, BeatPosition, MetronomeConfig } from "../../../shared/types.ts";
 
 export function secondsPerBeat(config: MetronomeConfig): number {
   return 60 / config.bpm;
@@ -31,4 +31,12 @@ export function beatAtHostTime(hostTime: number, startHostTime: number | null, c
     beatInBar: config.beatsPerBar > 0 ? (beatIndex % config.beatsPerBar) + 1 : 0,
     secondsPerBeat: beatLength,
   };
+}
+
+/** Position derived from the start time alone, for when no beat has been scheduled yet. */
+export function beatPositionAt(hostTime: number, startHostTime: number | null, config: MetronomeConfig): BeatPosition {
+  const beat = beatAtHostTime(hostTime, startHostTime, config);
+  if (startHostTime === null || hostTime < startHostTime) return { ...beat, progress: 0 };
+  const elapsedBeats = (hostTime - startHostTime) / beat.secondsPerBeat;
+  return { ...beat, progress: elapsedBeats - beat.beatIndex };
 }

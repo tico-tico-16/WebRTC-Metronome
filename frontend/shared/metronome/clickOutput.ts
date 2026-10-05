@@ -25,6 +25,11 @@ export class ClickOutput {
     return this.context?.currentTime ?? null;
   }
 
+  /** Safari has no outputLatency, so fall back to baseLatency, then 0. */
+  outputLatency(): number {
+    return this.context?.outputLatency ?? this.context?.baseLatency ?? 0;
+  }
+
   click(time: number, accented: boolean): void {
     if (!this.context) return;
     const oscillator = this.context.createOscillator();

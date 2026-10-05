@@ -4,7 +4,9 @@ import { playbackPhase } from "../shared/ui/playback.ts";
 import {
   connectionLabel,
   isConnectionLost,
-  meterLabel,
+  beatDisplayLabel,
+  formatBpm,
+  meterText,
   participantSyncLabel,
   signalingErrorLabel,
 } from "../shared/ui/labels.ts";
@@ -72,10 +74,26 @@ describe("labels", () => {
     expect(participantSyncLabel({ ...base, isPlaying: true })).toEqual({ text: "再生中", tone: "ok" });
   });
 
-  test("shows the meter and tempo, with beat 0 meaning no accent", () => {
-    expect(meterLabel({ bpm: 120, beatsPerBar: 4, beatUnit: 4 })).toBe("4/4 · BPM 120");
-    expect(meterLabel({ bpm: 120.5, beatsPerBar: 6, beatUnit: 8 })).toBe("6/8 · BPM 120.5");
-    expect(meterLabel({ bpm: 96, beatsPerBar: 0, beatUnit: 4 })).toBe("強拍なし · BPM 96");
+  test("shows the meter, with beat 0 meaning no accent", () => {
+    expect(meterText({ bpm: 120, beatsPerBar: 4, beatUnit: 4 })).toBe("4/4");
+    expect(meterText({ bpm: 120, beatsPerBar: 6, beatUnit: 8 })).toBe("6/8");
+    expect(meterText({ bpm: 96, beatsPerBar: 0, beatUnit: 4 })).toBe("強拍なし");
+  });
+
+  test("describes the beat display for screen readers, including countdown and current beat", () => {
+    const config = { bpm: 120, beatsPerBar: 4, beatUnit: 4 };
+    const beat = (beatInBar: number) => ({ beatIndex: 5, beatInBar, secondsPerBeat: 0.5, progress: 0.3 });
+    expect(beatDisplayLabel({ kind: "stopped" }, null, config)).toBe("停止中、4/4、BPM 120");
+    expect(beatDisplayLabel({ kind: "countdown", seconds: 2 }, null, config)).toBe("開始まで2秒、4/4、BPM 120");
+    expect(beatDisplayLabel({ kind: "playing" }, beat(3), config)).toBe("3拍目、4/4、BPM 120");
+    expect(beatDisplayLabel({ kind: "playing" }, null, config)).toBe("再生中、4/4、BPM 120");
+    expect(beatDisplayLabel({ kind: "playing" }, beat(0), { ...config, beatsPerBar: 0 })).toBe("再生中、強拍なし、BPM 120");
+  });
+
+  test("formats BPM with at most one decimal place", () => {
+    expect(formatBpm(120)).toBe("120");
+    expect(formatBpm(120.5)).toBe("120.5");
+    expect(formatBpm(120.04)).toBe("120");
   });
 });
 

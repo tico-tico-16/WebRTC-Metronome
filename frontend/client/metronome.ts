@@ -1,10 +1,10 @@
-import type { BeatInfo, MetronomeConfig } from "../../shared/types.ts";
+import type { BeatInfo, BeatPosition, MetronomeConfig } from "../../shared/types.ts";
 import { nowSeconds } from "./clockSync.ts";
 import { MetronomeEngine } from "../shared/metronome/engine.ts";
 import { ClickOutput } from "../shared/metronome/clickOutput.ts";
 import { VibrationOutput } from "../shared/metronome/vibrationOutput.ts";
 
-export { beatAtHostTime, secondsPerBeat } from "../shared/metronome/beat.ts";
+export { beatAtHostTime, beatPositionAt, secondsPerBeat } from "../shared/metronome/beat.ts";
 
 export class MetronomeScheduler {
   private hostToLocalTime: (hostTime: number) => number = (time) => time;
@@ -52,5 +52,17 @@ export class MetronomeScheduler {
 
   beatAtHostTime(hostTime: number): BeatInfo | null {
     return this.engine.beatAtHostTime(hostTime);
+  }
+
+  beatPositionHeardAt(hostTime: number): BeatPosition | null {
+    return this.engine.beatPositionHeardAt(hostTime);
+  }
+
+  audibleDelaySeconds(): number {
+    return this.engine.audibleDelaySeconds();
+  }
+
+  heardHostTimeFor(hostTime: number): number {
+    return this.engine.heardHostTimeFor(hostTime);
   }
 }

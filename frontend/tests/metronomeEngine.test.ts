@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { beatPositionAt } from "../shared/metronome/beat.ts";
 import { MetronomeEngine } from "../shared/metronome/engine.ts";
 import { ManualTimers } from "./helpers/browser.ts";
 
@@ -17,6 +18,7 @@ test("engine schedules host-time beats through injected clocks and outputs", () 
     audio: {
       currentTime: () => 10 + timers.nowMs / 1000,
       click: (time, accented) => clicks.push({ time, accented }),
+      outputLatency: () => 0,
     },
     vibration: {
       setEnabled: (enabled) => { vibrationEnabled = enabled; },
@@ -63,6 +65,7 @@ test("engine waits for the supplied scheduling gate and audio clock", () => {
     audio: {
       currentTime: () => audioAvailable ? 10 + timers.nowMs / 1000 : null,
       click: (time) => clicks.push(time),
+      outputLatency: () => 0,
     },
     vibration: { setEnabled() {}, schedule() {}, cancel() {} },
   });
@@ -76,4 +79,161 @@ test("engine waits for the supplied scheduling gate and audio clock", () => {
   timers.advanceTo(925);
   expect(clicks).toEqual([11]);
   engine.stop();
+});
+
+test("engine reports how far through the heard beat a moment is", () => {
+  const timers = new ManualTimers();
+  const engine = new MetronomeEngine({
+    now: () => timers.nowMs / 1000,
+    hostToLocalTime: (time) => time,
+    canSchedule: () => true,
+    timers,
+    audio: { currentTime: () => timers.nowMs / 1000, click() {}, outputLatency: () => 0 },
+    vibration: { setEnabled() {}, schedule() {}, cancel() {} },
+  });
+  engine.start({ bpm: 120, beatsPerBar: 4, beatUnit: 4 }, 1, 0);
+  timers.advanceTo(1100);
+  expect(engine.beatPositionHeardAt(0.9)).toBeNull();
+  expect(engine.beatPositionHeardAt(1)).toEqual({ beatIndex: 0, beatInBar: 1, secondsPerBeat: 0.5, progress: 0 });
+  expect(engine.beatPositionHeardAt(1.25)).toEqual({ beatIndex: 0, beatInBar: 1, secondsPerBeat: 0.5, progress: 0.5 });
+
+  // The next beat (1.5) is scheduled after the tempo change, so it carries the new length.
+  engine.updateConfig({ bpm: 60, beatsPerBar: 4, beatUnit: 4 });
+  timers.advanceTo(2400);
+  expect(engine.beatPositionHeardAt(1.75)).toEqual({ beatIndex: 1, beatInBar: 2, secondsPerBeat: 1, progress: 0.25 });
+  expect(engine.beatPositionHeardAt(3)).toEqual({ beatIndex: 2, beatInBar: 3, secondsPerBeat: 1, progress: 0.5 });
+  // Past the end of the last scheduled beat the position stays at its end.
+  expect(engine.beatPositionHeardAt(4)!.progress).toBe(1);
+  engine.stop();
+});
+
+test("engine keeps the delay each click was scheduled with when the offset changes mid-play", () => {
+  const timers = new ManualTimers();
+  const engine = new MetronomeEngine({
+    now: () => timers.nowMs / 1000,
+    hostToLocalTime: (time) => time,
+    canSchedule: () => true,
+    timers,
+    audio: { currentTime: () => timers.nowMs / 1000, click() {}, outputLatency: () => 0.01 },
+    vibration: { setEnabled() {}, schedule() {}, cancel() {} },
+  });
+  engine.setOutputOffsetMs(40);
+  engine.start({ bpm: 120, beatsPerBar: 4, beatUnit: 4 }, 1, 0);
+  timers.advanceTo(1100);
+  // Beat 1.0 is heard 50ms later, at 1.05.
+  expect(engine.beatPositionHeardAt(1.04)).toBeNull();
+  expect(engine.beatPositionHeardAt(1.3)!.progress).toBeCloseTo(0.5, 8);
+
+  // Beat 1.5 is already reserved with the old offset when the offset changes.
+  timers.advanceTo(1400);
+  engine.setOutputOffsetMs(140);
+  expect(engine.audibleDelaySeconds()).toBeCloseTo(0.15, 8);
+  const reserved = engine.beatPositionHeardAt(1.6)!;
+  expect([reserved.beatIndex, reserved.beatInBar]).toEqual([1, 2]);
+  expect(reserved.progress).toBeCloseTo(0.1, 8);
+
+  // Beat 2.0 is reserved after the change, so it is heard at 2.15.
+  timers.advanceTo(2000);
+  const approaching = engine.beatPositionHeardAt(2.1)!;
+  expect(approaching.beatIndex).toBe(1);
+  expect(approaching.progress).toBeCloseTo(0.55 / 0.6, 8);
+  const next = engine.beatPositionHeardAt(2.2)!;
+  expect([next.beatIndex, next.beatInBar]).toEqual([2, 3]);
+  expect(next.progress).toBeCloseTo(0.1, 8);
+  engine.stop();
+});
+
+test("engine follows the most recently heard click when a large offset cut reorders them", () => {
+  const timers = new ManualTimers();
+  const engine = new MetronomeEngine({
+    now: () => timers.nowMs / 1000,
+    hostToLocalTime: (time) => time,
+    canSchedule: () => true,
+    timers,
+    audio: { currentTime: () => timers.nowMs / 1000, click() {}, outputLatency: () => 0 },
+    vibration: { setEnabled() {}, schedule() {}, cancel() {} },
+  });
+  engine.setOutputOffsetMs(200);
+  engine.start({ bpm: 240, beatsPerBar: 4, beatUnit: 4 }, 1, 0);
+  // Beat 1.5 is reserved with +200ms, so it is heard at 1.70.
+  timers.advanceTo(1525);
+  engine.setOutputOffsetMs(-200);
+  // Beat 1.75 is reserved with -200ms, so it is heard earlier, at 1.55.
+  timers.advanceTo(1700);
+  expect(engine.beatPositionHeardAt(1.6)!.beatIndex).toBe(3);
+  const latest = engine.beatPositionHeardAt(1.72)!;
+  expect(latest.beatIndex).toBe(2);
+  // The next click heard after 1.70 is beat 2.0, at 1.80.
+  timers.advanceTo(1750);
+  expect(engine.beatPositionHeardAt(1.72)!.progress).toBeCloseTo(0.2, 8);
+  engine.stop();
+});
+
+test("engine paces the dot by the gap between clicks actually heard after an offset change", () => {
+  const timers = new ManualTimers();
+  const engine = new MetronomeEngine({
+    now: () => timers.nowMs / 1000,
+    hostToLocalTime: (time) => time,
+    canSchedule: () => true,
+    timers,
+    audio: { currentTime: () => timers.nowMs / 1000, click() {}, outputLatency: () => 0 },
+    vibration: { setEnabled() {}, schedule() {}, cancel() {} },
+  });
+  engine.start({ bpm: 120, beatsPerBar: 4, beatUnit: 4 }, 1, 0);
+  // Beat 1.5 is reserved with no offset (heard at 1.5); beat 2.0 with +100ms (heard at 2.1).
+  timers.advanceTo(1400);
+  engine.setOutputOffsetMs(100);
+  timers.advanceTo(1950);
+  const beforeNext = engine.beatPositionHeardAt(2)!;
+  expect(beforeNext.beatIndex).toBe(1);
+  expect(beforeNext.progress).toBeCloseTo(0.5 / 0.6, 8);
+  expect(engine.beatPositionHeardAt(2.1)).toMatchObject({ beatIndex: 2, progress: 0 });
+  engine.stop();
+});
+
+test("engine tells when the click for a host time is heard, keeping a reserved click's delay", () => {
+  const timers = new ManualTimers();
+  const engine = new MetronomeEngine({
+    now: () => timers.nowMs / 1000,
+    hostToLocalTime: (time) => time,
+    canSchedule: () => true,
+    timers,
+    audio: { currentTime: () => timers.nowMs / 1000, click() {}, outputLatency: () => 0.01 },
+    vibration: { setEnabled() {}, schedule() {}, cancel() {} },
+  });
+  engine.start({ bpm: 120, beatsPerBar: 4, beatUnit: 4 }, 1, 0);
+  // Not reserved yet: the current delay applies.
+  expect(engine.heardHostTimeFor(1)).toBeCloseTo(1.01, 8);
+  // The first click is reserved, then the offset is raised before it sounds.
+  timers.advanceTo(900);
+  engine.setOutputOffsetMs(200);
+  expect(engine.heardHostTimeFor(1)).toBeCloseTo(1.01, 8);
+  expect(engine.heardHostTimeFor(1.5)).toBeCloseTo(1.71, 8);
+  engine.stop();
+});
+
+test("engine reports the delay until a click is heard as offset plus output latency", () => {
+  const timers = new ManualTimers();
+  let latency = 0.03;
+  const engine = new MetronomeEngine({
+    now: () => timers.nowMs / 1000,
+    hostToLocalTime: (time) => time,
+    canSchedule: () => true,
+    timers,
+    audio: { currentTime: () => 0, click() {}, outputLatency: () => latency },
+    vibration: { setEnabled() {}, schedule() {}, cancel() {} },
+  });
+  expect(engine.audibleDelaySeconds()).toBeCloseTo(0.03, 8);
+  engine.setOutputOffsetMs(20);
+  latency = 0.01;
+  expect(engine.audibleDelaySeconds()).toBeCloseTo(0.03, 8);
+  engine.setOutputOffsetMs(-50);
+  expect(engine.audibleDelaySeconds()).toBeCloseTo(-0.04, 8);
+});
+
+test("beatPositionAt derives the position from the start time when nothing is scheduled", () => {
+  const config = { bpm: 120, beatsPerBar: 3, beatUnit: 4 };
+  expect(beatPositionAt(0.5, 1, config)).toEqual({ beatIndex: 0, beatInBar: 1, secondsPerBeat: 0.5, progress: 0 });
+  expect(beatPositionAt(2.25, 1, config)).toEqual({ beatIndex: 2, beatInBar: 3, secondsPerBeat: 0.5, progress: 0.5 });
+  expect(beatPositionAt(2.5, 1, { ...config, beatsPerBar: 0 })).toEqual({ beatIndex: 3, beatInBar: 0, secondsPerBeat: 0.5, progress: 0 });
 });

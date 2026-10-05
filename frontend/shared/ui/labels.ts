@@ -1,4 +1,5 @@
-import type { MetronomeConfig } from "../../../shared/types.ts";
+import type { BeatPosition, MetronomeConfig } from "../../../shared/types.ts";
+import type { PlaybackPhase } from "./playback.ts";
 
 export type StatusTone = "neutral" | "ok" | "warn" | "error";
 export type StatusLabel = { text: string; tone: StatusTone };
@@ -46,7 +47,20 @@ export function participantSyncLabel(state: {
 }
 
 /** Beats per bar 0 means no accented downbeat. */
-export function meterLabel(config: MetronomeConfig): string {
-  const meter = config.beatsPerBar > 0 ? `${config.beatsPerBar}/${config.beatUnit}` : "強拍なし";
-  return `${meter} · BPM ${Math.round(config.bpm * 10) / 10}`;
+export function meterText(config: MetronomeConfig): string {
+  return config.beatsPerBar > 0 ? `${config.beatsPerBar}/${config.beatUnit}` : "強拍なし";
+}
+
+export function formatBpm(bpm: number): string {
+  return String(Math.round(bpm * 10) / 10);
+}
+
+/** Text alternative for the beat display, which is otherwise only shapes and SVG text. */
+export function beatDisplayLabel(phase: PlaybackPhase, beat: BeatPosition | null, config: MetronomeConfig): string {
+  const state = phase.kind === "countdown"
+    ? `開始まで${phase.seconds}秒`
+    : phase.kind === "stopped"
+      ? "停止中"
+      : beat !== null && config.beatsPerBar > 0 ? `${beat.beatInBar}拍目` : "再生中";
+  return `${state}、${meterText(config)}、BPM ${formatBpm(config.bpm)}`;
 }

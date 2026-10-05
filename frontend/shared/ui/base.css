@@ -178,20 +178,78 @@ h2 {
   font-size: 0.84rem;
 }
 
-.beat-display-value {
-  margin: 0;
-  font-size: clamp(4.5rem, 22vw, 7.5rem);
-  font-weight: 800;
-  line-height: 1;
+.beat-polygon {
+  display: block;
+  width: min(100%, 320px);
+  height: auto;
+  overflow: visible;
+}
+
+.beat-shape {
+  fill: none;
+  stroke: #c9cbc3;
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+
+.beat-vertex {
+  fill: var(--text-muted);
+}
+
+.beat-vertex.is-downbeat {
+  fill: var(--text);
+}
+
+/* Scale animations grow each vertex (and the circle) from its own centre. */
+.beat-vertex,
+.beat-shape {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.beat-vertex.is-active {
+  fill: var(--accent);
+}
+
+.beat-shape.is-active {
+  stroke: var(--accent);
+}
+
+.beat-dot {
+  fill: var(--accent);
+}
+
+.beat-center-value,
+.beat-center-unit {
+  text-anchor: middle;
   font-variant-numeric: tabular-nums;
+  /* A halo keeps the text readable where the 2-beat line crosses it. */
+  paint-order: stroke;
+  stroke: var(--surface-muted);
+  stroke-width: 8px;
+  stroke-linejoin: round;
 }
 
-.beat-display[data-phase="stopped"] .beat-display-value {
-  color: var(--text-muted);
+.beat-center-value {
+  fill: var(--text);
+  font-size: 56px;
+  font-weight: 800;
+  dominant-baseline: middle;
 }
 
-.beat-display[data-accent="true"] .beat-display-value {
-  color: var(--accent);
+.beat-center-unit {
+  fill: var(--text-secondary);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.beat-display[data-phase="stopped"] .beat-shape {
+  stroke: var(--border);
+}
+
+.beat-display[data-phase="stopped"] .beat-vertex,
+.beat-display[data-phase="stopped"] .beat-center-value {
+  fill: var(--text-muted);
 }
 
 /* Controls */

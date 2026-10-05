@@ -1,4 +1,4 @@
-import type { BeatInfo, MetronomeConfig } from "../../../shared/types.ts";
+import type { BeatInfo, BeatPosition, MetronomeConfig } from "../../../shared/types.ts";
 import { advanceBeatInBar, beatInBarForIndex, clampBeatInBar, secondsPerBeat } from "./beat.ts";
 
 const SCHEDULE_INTERVAL_MS = 25;
@@ -6,7 +6,8 @@ const LOOK_AHEAD_SECONDS = 0.18;
 const LATE_TOLERANCE_SECONDS = 0.02;
 const HISTORY_LIMIT = 64;
 
-type ScheduledBeat = BeatInfo & { hostTime: number };
+/** heardHostTime is when the click is heard: the beat's host time plus the delay it was reserved with. */
+type ScheduledBeat = BeatInfo & { hostTime: number; heardHostTime: number };
 
 export type MetronomeDependencies = {
   now: () => number;
@@ -19,6 +20,8 @@ export type MetronomeDependencies = {
   audio: {
     currentTime: () => number | null;
     click: (time: number, accented: boolean) => void;
+    /** Seconds between a scheduled time and the sound leaving the speaker. */
+    outputLatency: () => number;
   };
   vibration: {
     setEnabled: (enabled: boolean) => void;
@@ -76,12 +79,53 @@ export class MetronomeEngine {
   }
 
   beatAtHostTime(hostTime: number): BeatInfo | null {
-    let current: ScheduledBeat | null = null;
-    for (const beat of this.scheduledBeats) {
-      if (beat.hostTime <= hostTime) current = beat;
-    }
+    const current = this.scheduledBeatAt(hostTime);
     if (!current) return null;
     return { beatIndex: current.beatIndex, beatInBar: current.beatInBar, secondsPerBeat: current.secondsPerBeat };
+  }
+
+  /**
+   * Position within the beat being heard at hostTime. Each beat keeps the delay it was reserved with,
+   * so changing the output offset does not shift clicks already handed to the audio output.
+   * Progress runs from this click to the next one heard, so the dot reaches each vertex as its click
+   * sounds even when an offset change has stretched or squeezed the gap. Past the last scheduled
+   * beat it uses the beat length and stays at 1.
+   */
+  beatPositionHeardAt(hostTime: number): BeatPosition | null {
+    // A large offset cut can make a later beat heard before an earlier reserved one,
+    // so pick the most recently heard click rather than the last one in beat order.
+    let current: ScheduledBeat | null = null;
+    for (const beat of this.scheduledBeats) {
+      if (beat.heardHostTime <= hostTime && (current === null || beat.heardHostTime >= current.heardHostTime)) {
+        current = beat;
+      }
+    }
+    if (!current) return null;
+    let nextHeardHostTime: number | null = null;
+    for (const beat of this.scheduledBeats) {
+      if (beat.heardHostTime > current.heardHostTime && (nextHeardHostTime === null || beat.heardHostTime < nextHeardHostTime)) {
+        nextHeardHostTime = beat.heardHostTime;
+      }
+    }
+    const length = nextHeardHostTime === null ? current.secondsPerBeat : nextHeardHostTime - current.heardHostTime;
+    const progress = (hostTime - current.heardHostTime) / length;
+    return {
+      beatIndex: current.beatIndex,
+      beatInBar: current.beatInBar,
+      secondsPerBeat: current.secondsPerBeat,
+      progress: Math.min(1, Math.max(0, progress)),
+    };
+  }
+
+  /** When the click for hostTime is heard: as reserved if it already is, otherwise with the current delay. */
+  heardHostTimeFor(hostTime: number): number {
+    const reserved = this.scheduledBeats.find((beat) => Math.abs(beat.hostTime - hostTime) < 1e-6);
+    return reserved ? reserved.heardHostTime : hostTime + this.audibleDelaySeconds();
+  }
+
+  /** How long after a beat's host time its click is heard: output offset plus device output latency. */
+  audibleDelaySeconds(): number {
+    return this.outputOffsetSeconds + this.dependencies.audio.outputLatency();
   }
 
   nextStrongBeatHostTime(atHostTime: number): number | null {
@@ -101,6 +145,14 @@ export class MetronomeEngine {
     return beatHostTime;
   }
 
+  private scheduledBeatAt(hostTime: number): ScheduledBeat | null {
+    let current: ScheduledBeat | null = null;
+    for (const beat of this.scheduledBeats) {
+      if (beat.hostTime <= hostTime) current = beat;
+    }
+    return current;
+  }
+
   private scheduleAhead(): void {
     if (!this.dependencies.canSchedule() || this.startHostTime === null || this.nextBeatHostTime === null) return;
     const audioNow = this.dependencies.audio.currentTime();
@@ -118,6 +170,7 @@ export class MetronomeEngine {
         this.dependencies.vibration.schedule((audioTime - audioNow) * 1000, accented);
         this.scheduledBeats.push({
           hostTime: beatHostTime,
+          heardHostTime: beatHostTime + this.audibleDelaySeconds(),
           beatIndex: this.nextBeatIndex,
           beatInBar: this.nextBeatInBar,
           secondsPerBeat: secondsPerBeat(this.config),
