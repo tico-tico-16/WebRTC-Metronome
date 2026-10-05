@@ -53,8 +53,8 @@ export class HostMetronomeScheduler {
     return this.engine.beatAtHostTime(hostTime);
   }
 
-  beatPositionAtHostTime(hostTime: number): BeatPosition | null {
-    return this.engine.beatPositionAtHostTime(hostTime);
+  beatPositionHeardAt(hostTime: number): BeatPosition | null {
+    return this.engine.beatPositionHeardAt(hostTime);
   }
 
   audibleDelaySeconds(): number {

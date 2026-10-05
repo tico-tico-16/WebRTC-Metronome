@@ -1,6 +1,6 @@
 import type { BeatPosition, MetronomeConfig } from "../../../shared/types.ts";
 import { beatShape, beatVertices, dotPosition } from "./beatPolygon.ts";
-import { formatBpm, meterText } from "./labels.ts";
+import { beatDisplayLabel, formatBpm, meterText } from "./labels.ts";
 import type { PlaybackPhase } from "./playback.ts";
 
 export type BeatDisplayState = {
@@ -61,10 +61,10 @@ export class BeatDisplay {
     setText(this.centerValue, phase.kind === "countdown" ? String(phase.seconds) : formatBpm(config.bpm));
     setText(this.centerUnit, phase.kind === "countdown" ? "" : "BPM");
     setText(this.meta, meterText(config));
-    const label = `${meterText(config)}、BPM ${formatBpm(config.bpm)}`;
+    const playingBeat = phase.kind === "playing" ? beat : null;
+    const label = beatDisplayLabel(phase, playingBeat, config);
     if (this.svg.getAttribute("aria-label") !== label) this.svg.setAttribute("aria-label", label);
 
-    const playingBeat = phase.kind === "playing" ? beat : null;
     this.placeDot(phase, playingBeat, beatsPerBar);
     this.highlight(playingBeat, beatsPerBar);
   }
@@ -127,7 +127,9 @@ export class BeatDisplay {
       : beatsPerBar > 0
         ? this.vertices[(beat.beatInBar - 1 + beatsPerBar) % beatsPerBar] ?? null
         : this.shape;
-    const active = target !== null && beat !== null && (beat.progress < HIT_PROGRESS || this.reducedMotion.matches);
+    // Only the start of each beat is highlighted, so the mark blinks even when the dot is still
+    // (reduced motion) or the target never changes (0 and 1 beats per bar).
+    const active = target !== null && beat !== null && beat.progress < HIT_PROGRESS;
 
     for (const vertex of this.vertices) vertex.classList.toggle("is-active", active && vertex === target);
     this.shape?.classList.toggle("is-active", active && this.shape === target);

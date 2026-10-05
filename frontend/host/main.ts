@@ -226,12 +226,13 @@ copyUrlButton.addEventListener("click", async () => {
 });
 
 function renderBeat(): void {
-  // Draw what is being heard: a click sounds this long after its beat's host time.
-  const displayTime = nowSeconds() - scheduler.audibleDelaySeconds();
-  const phase = playbackPhase(displayTime, isPlaying ? startHostTime : null);
+  // Draw what is being heard: a click sounds a little after its beat's host time.
+  const hostNow = nowSeconds();
+  const heardTime = hostNow - scheduler.audibleDelaySeconds();
+  const phase = playbackPhase(heardTime, isPlaying ? startHostTime : null);
   const config = appliedConfig;
   const beat = phase.kind === "playing"
-    ? scheduler.beatPositionAtHostTime(displayTime) ?? beatPositionAt(displayTime, startHostTime, config)
+    ? scheduler.beatPositionHeardAt(hostNow) ?? beatPositionAt(heardTime, startHostTime, config)
     : null;
   beatDisplay.update({ phase, beat, config });
 }

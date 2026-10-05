@@ -62,7 +62,10 @@ describe.serial("metronome public behavior", () => {
         browser.contexts[0]!.outputLatency = 0.02;
         expect(scheduler.audibleDelaySeconds()).toBeCloseTo(0.05, 8);
         browser.timers.advanceTo(1100);
-        expect(scheduler.beatPositionAtHostTime(1.25)).toEqual({ beatIndex: 0, beatInBar: 1, secondsPerBeat: 0.5, progress: 0.5 });
+        // Beat 1.0 was reserved with that delay, so it is heard at 1.05.
+        const heard = scheduler.beatPositionHeardAt(1.3)!;
+        expect([heard.beatIndex, heard.beatInBar, heard.secondsPerBeat]).toEqual([0, 1, 0.5]);
+        expect(heard.progress).toBeCloseTo(0.5, 8);
       });
 
       test("starts on the next beat when joining late", async () => {
