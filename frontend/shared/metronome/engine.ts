@@ -90,9 +90,13 @@ export class MetronomeEngine {
    * The position stays at 1 past the last scheduled beat.
    */
   beatPositionHeardAt(hostTime: number): BeatPosition | null {
+    // A large offset cut can make a later beat heard before an earlier reserved one,
+    // so pick the most recently heard click rather than the last one in beat order.
     let current: ScheduledBeat | null = null;
     for (const beat of this.scheduledBeats) {
-      if (beat.heardHostTime <= hostTime) current = beat;
+      if (beat.heardHostTime <= hostTime && (current === null || beat.heardHostTime >= current.heardHostTime)) {
+        current = beat;
+      }
     }
     if (!current) return null;
     const progress = (hostTime - current.heardHostTime) / current.secondsPerBeat;

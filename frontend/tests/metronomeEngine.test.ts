@@ -141,6 +141,30 @@ test("engine keeps the delay each click was scheduled with when the offset chang
   engine.stop();
 });
 
+test("engine follows the most recently heard click when a large offset cut reorders them", () => {
+  const timers = new ManualTimers();
+  const engine = new MetronomeEngine({
+    now: () => timers.nowMs / 1000,
+    hostToLocalTime: (time) => time,
+    canSchedule: () => true,
+    timers,
+    audio: { currentTime: () => timers.nowMs / 1000, click() {}, outputLatency: () => 0 },
+    vibration: { setEnabled() {}, schedule() {}, cancel() {} },
+  });
+  engine.setOutputOffsetMs(200);
+  engine.start({ bpm: 240, beatsPerBar: 4, beatUnit: 4 }, 1, 0);
+  // Beat 1.5 is reserved with +200ms, so it is heard at 1.70.
+  timers.advanceTo(1525);
+  engine.setOutputOffsetMs(-200);
+  // Beat 1.75 is reserved with -200ms, so it is heard earlier, at 1.55.
+  timers.advanceTo(1700);
+  expect(engine.beatPositionHeardAt(1.6)!.beatIndex).toBe(3);
+  const latest = engine.beatPositionHeardAt(1.72)!;
+  expect(latest.beatIndex).toBe(2);
+  expect(latest.progress).toBeCloseTo(0.08, 8);
+  engine.stop();
+});
+
 test("engine reports the delay until a click is heard as offset plus output latency", () => {
   const timers = new ManualTimers();
   let latency = 0.03;
