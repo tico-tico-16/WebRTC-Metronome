@@ -134,7 +134,9 @@ test("engine keeps the delay each click was scheduled with when the offset chang
 
   // Beat 2.0 is reserved after the change, so it is heard at 2.15.
   timers.advanceTo(2000);
-  expect(engine.beatPositionHeardAt(2.1)).toMatchObject({ beatIndex: 1, progress: 1 });
+  const approaching = engine.beatPositionHeardAt(2.1)!;
+  expect(approaching.beatIndex).toBe(1);
+  expect(approaching.progress).toBeCloseTo(0.55 / 0.6, 8);
   const next = engine.beatPositionHeardAt(2.2)!;
   expect([next.beatIndex, next.beatInBar]).toEqual([2, 3]);
   expect(next.progress).toBeCloseTo(0.1, 8);
@@ -161,7 +163,52 @@ test("engine follows the most recently heard click when a large offset cut reord
   expect(engine.beatPositionHeardAt(1.6)!.beatIndex).toBe(3);
   const latest = engine.beatPositionHeardAt(1.72)!;
   expect(latest.beatIndex).toBe(2);
-  expect(latest.progress).toBeCloseTo(0.08, 8);
+  // The next click heard after 1.70 is beat 2.0, at 1.80.
+  timers.advanceTo(1750);
+  expect(engine.beatPositionHeardAt(1.72)!.progress).toBeCloseTo(0.2, 8);
+  engine.stop();
+});
+
+test("engine paces the dot by the gap between clicks actually heard after an offset change", () => {
+  const timers = new ManualTimers();
+  const engine = new MetronomeEngine({
+    now: () => timers.nowMs / 1000,
+    hostToLocalTime: (time) => time,
+    canSchedule: () => true,
+    timers,
+    audio: { currentTime: () => timers.nowMs / 1000, click() {}, outputLatency: () => 0 },
+    vibration: { setEnabled() {}, schedule() {}, cancel() {} },
+  });
+  engine.start({ bpm: 120, beatsPerBar: 4, beatUnit: 4 }, 1, 0);
+  // Beat 1.5 is reserved with no offset (heard at 1.5); beat 2.0 with +100ms (heard at 2.1).
+  timers.advanceTo(1400);
+  engine.setOutputOffsetMs(100);
+  timers.advanceTo(1950);
+  const beforeNext = engine.beatPositionHeardAt(2)!;
+  expect(beforeNext.beatIndex).toBe(1);
+  expect(beforeNext.progress).toBeCloseTo(0.5 / 0.6, 8);
+  expect(engine.beatPositionHeardAt(2.1)).toMatchObject({ beatIndex: 2, progress: 0 });
+  engine.stop();
+});
+
+test("engine tells when the click for a host time is heard, keeping a reserved click's delay", () => {
+  const timers = new ManualTimers();
+  const engine = new MetronomeEngine({
+    now: () => timers.nowMs / 1000,
+    hostToLocalTime: (time) => time,
+    canSchedule: () => true,
+    timers,
+    audio: { currentTime: () => timers.nowMs / 1000, click() {}, outputLatency: () => 0.01 },
+    vibration: { setEnabled() {}, schedule() {}, cancel() {} },
+  });
+  engine.start({ bpm: 120, beatsPerBar: 4, beatUnit: 4 }, 1, 0);
+  // Not reserved yet: the current delay applies.
+  expect(engine.heardHostTimeFor(1)).toBeCloseTo(1.01, 8);
+  // The first click is reserved, then the offset is raised before it sounds.
+  timers.advanceTo(900);
+  engine.setOutputOffsetMs(200);
+  expect(engine.heardHostTimeFor(1)).toBeCloseTo(1.01, 8);
+  expect(engine.heardHostTimeFor(1.5)).toBeCloseTo(1.71, 8);
   engine.stop();
 });
 

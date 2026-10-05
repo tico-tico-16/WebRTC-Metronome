@@ -87,7 +87,9 @@ export class MetronomeEngine {
   /**
    * Position within the beat being heard at hostTime. Each beat keeps the delay it was reserved with,
    * so changing the output offset does not shift clicks already handed to the audio output.
-   * The position stays at 1 past the last scheduled beat.
+   * Progress runs from this click to the next one heard, so the dot reaches each vertex as its click
+   * sounds even when an offset change has stretched or squeezed the gap. Past the last scheduled
+   * beat it uses the beat length and stays at 1.
    */
   beatPositionHeardAt(hostTime: number): BeatPosition | null {
     // A large offset cut can make a later beat heard before an earlier reserved one,
@@ -99,13 +101,26 @@ export class MetronomeEngine {
       }
     }
     if (!current) return null;
-    const progress = (hostTime - current.heardHostTime) / current.secondsPerBeat;
+    let nextHeardHostTime: number | null = null;
+    for (const beat of this.scheduledBeats) {
+      if (beat.heardHostTime > current.heardHostTime && (nextHeardHostTime === null || beat.heardHostTime < nextHeardHostTime)) {
+        nextHeardHostTime = beat.heardHostTime;
+      }
+    }
+    const length = nextHeardHostTime === null ? current.secondsPerBeat : nextHeardHostTime - current.heardHostTime;
+    const progress = (hostTime - current.heardHostTime) / length;
     return {
       beatIndex: current.beatIndex,
       beatInBar: current.beatInBar,
       secondsPerBeat: current.secondsPerBeat,
       progress: Math.min(1, Math.max(0, progress)),
     };
+  }
+
+  /** When the click for hostTime is heard: as reserved if it already is, otherwise with the current delay. */
+  heardHostTimeFor(hostTime: number): number {
+    const reserved = this.scheduledBeats.find((beat) => Math.abs(beat.hostTime - hostTime) < 1e-6);
+    return reserved ? reserved.heardHostTime : hostTime + this.audibleDelaySeconds();
   }
 
   /** How long after a beat's host time its click is heard: output offset plus device output latency. */

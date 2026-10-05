@@ -66,6 +66,7 @@ describe.serial("metronome public behavior", () => {
         const heard = scheduler.beatPositionHeardAt(1.3)!;
         expect([heard.beatIndex, heard.beatInBar, heard.secondsPerBeat]).toEqual([0, 1, 0.5]);
         expect(heard.progress).toBeCloseTo(0.5, 8);
+        expect(scheduler.heardHostTimeFor(1)).toBeCloseTo(1.05, 8);
       });
 
       test("starts on the next beat when joining late", async () => {

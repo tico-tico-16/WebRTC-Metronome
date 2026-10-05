@@ -66,10 +66,11 @@ function formatMs(seconds: number | null): string {
 function renderBeat(): void {
   // Draw what is being heard: a click sounds a little after its beat's host time.
   const hostNow = clockSync.hostNow();
-  const heardTime = hostNow - scheduler.audibleDelaySeconds();
-  const phase = playbackPhase(heardTime, isPlaying ? startHostTime : null);
+  // The countdown ends as the first click is heard, using the delay it was reserved with.
+  const start = isPlaying ? startHostTime : null;
+  const phase = playbackPhase(hostNow, start === null ? null : scheduler.heardHostTimeFor(start));
   const beat = phase.kind === "playing"
-    ? scheduler.beatPositionHeardAt(hostNow) ?? beatPositionAt(heardTime, startHostTime, config)
+    ? scheduler.beatPositionHeardAt(hostNow) ?? beatPositionAt(hostNow - scheduler.audibleDelaySeconds(), startHostTime, config)
     : null;
   beatDisplay.update({ phase, beat, config });
 }

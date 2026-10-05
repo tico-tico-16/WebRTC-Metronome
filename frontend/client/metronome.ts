@@ -61,4 +61,8 @@ export class MetronomeScheduler {
   audibleDelaySeconds(): number {
     return this.engine.audibleDelaySeconds();
   }
+
+  heardHostTimeFor(hostTime: number): number {
+    return this.engine.heardHostTimeFor(hostTime);
+  }
 }
