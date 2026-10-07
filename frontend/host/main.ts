@@ -3,7 +3,7 @@ import QRCode from "qrcode";
 import { nowSeconds } from "./clockSync.ts";
 import { beatPositionAt, HostMetronomeScheduler } from "./metronome.ts";
 import { SignalingClient } from "./signaling.ts";
-import { connectedPeerCount, peerStatusLabel } from "./status.ts";
+import { connectedPeerCount, participantSummary, peerStatusLabel } from "./status.ts";
 import { HostWebRTC } from "./webrtc.ts";
 import {
   METER_PRESETS,
@@ -47,10 +47,11 @@ const vibrationToggle = document.querySelector<HTMLInputElement>("#vibrationTogg
 const vibrationNote = document.querySelector<HTMLElement>("#vibrationNote")!;
 const connectionStatus = document.querySelector<HTMLElement>("#connectionStatus")!;
 const beatDisplay = new BeatDisplay(document.querySelector<HTMLElement>("#beatDisplay")!);
-const inviteButton = document.querySelector<HTMLButtonElement>("#inviteButton")!;
-const emptyInviteButton = document.querySelector<HTMLButtonElement>("#emptyInviteButton")!;
-const inviteDialog = document.querySelector<HTMLDialogElement>("#inviteDialog")!;
-const inviteCloseButton = document.querySelector<HTMLButtonElement>("#inviteCloseButton")!;
+const participantsButton = document.querySelector<HTMLButtonElement>("#participantsButton")!;
+const participantsButtonLabel = document.querySelector<HTMLElement>("#participantsButtonLabel")!;
+const participantsDot = document.querySelector<HTMLElement>("#participantsDot")!;
+const participantsDialog = document.querySelector<HTMLDialogElement>("#participantsDialog")!;
+const participantsCloseButton = document.querySelector<HTMLButtonElement>("#participantsCloseButton")!;
 const participantUrl = document.querySelector<HTMLInputElement>("#participantUrl")!;
 const participantQr = document.querySelector<HTMLElement>("#participantQr")!;
 const copyUrlButton = document.querySelector<HTMLButtonElement>("#copyUrlButton")!;
@@ -90,6 +91,8 @@ let appliedConfig = readConfig();
 
 function setStatus(label: StatusLabel): void {
   connectionStatus.textContent = label.text;
+  // Non-error statuses are cut to one line, so the full text stays available on hover.
+  connectionStatus.title = label.text;
   connectionStatus.dataset.tone = label.tone;
 }
 
@@ -118,10 +121,23 @@ function formatMs(label: string, seconds: number | null): string {
   return seconds === null ? `${label} --` : `${label} ${(seconds * 1000).toFixed(1)}ms`;
 }
 
+const SUMMARY_DESCRIPTIONS = {
+  neutral: "まだ参加者はいません",
+  ok: "全員同期済み",
+  warn: "接続中または同期中の参加者がいます",
+  error: "切断された参加者がいます",
+} as const;
+
 function renderParticipants(): void {
+  const summary = participantSummary(webRTC.peers.values());
+  participantsButtonLabel.textContent = `参加者 ${summary.count}`;
+  participantsDot.dataset.tone = summary.tone;
+  participantsButton.setAttribute("aria-label", `参加者 ${summary.count}人、${SUMMARY_DESCRIPTIONS[summary.tone]}`);
+
   participantList.innerHTML = "";
   participantCount.textContent = `${connectedPeerCount(webRTC.peers.values())}人接続中`;
   participantsEmpty.hidden = webRTC.peers.size > 0;
+  participantList.hidden = webRTC.peers.size === 0;
 
   for (const peer of webRTC.peers.values()) {
     const item = document.createElement("li");
@@ -146,10 +162,9 @@ signaling.onMessage((message: SignalMessage) => {
     hasRoom = true;
     createRoomButton.disabled = true;
     createRoomButton.hidden = true;
-    inviteButton.hidden = false;
-    emptyInviteButton.hidden = false;
+    participantsButton.hidden = false;
     // Inviting is the host's next step, so the dialog opens once right after the room is created.
-    void renderParticipantInvite(message.participantUrl ?? "").then(openInvite);
+    void renderParticipantInvite(message.participantUrl ?? "").then(openParticipants);
     setStatus({ text: "部屋を作成しました", tone: "ok" });
     setPlaying(false);
     return;
@@ -191,9 +206,9 @@ async function renderParticipantInvite(url: string): Promise<void> {
   });
 }
 
-function openInvite(): void {
+function openParticipants(): void {
   copyStatus.textContent = "";
-  if (!inviteDialog.open) inviteDialog.showModal();
+  if (!participantsDialog.open) participantsDialog.showModal();
 }
 
 let copyStatusTimer: number | null = null;
@@ -206,12 +221,11 @@ function showCopyStatus(text: string): void {
   }, 2000);
 }
 
-inviteButton.addEventListener("click", openInvite);
-emptyInviteButton.addEventListener("click", openInvite);
-inviteCloseButton.addEventListener("click", () => inviteDialog.close());
-inviteDialog.addEventListener("click", (event) => {
+participantsButton.addEventListener("click", openParticipants);
+participantsCloseButton.addEventListener("click", () => participantsDialog.close());
+participantsDialog.addEventListener("click", (event) => {
   // The dialog element itself only receives clicks on its backdrop.
-  if (event.target === inviteDialog) inviteDialog.close();
+  if (event.target === participantsDialog) participantsDialog.close();
 });
 
 copyUrlButton.addEventListener("click", async () => {
@@ -275,7 +289,7 @@ document.addEventListener("keydown", (event) => {
   if (event.code !== "Space" || event.repeat || event.isComposing) return;
   if (event.ctrlKey || event.metaKey || event.altKey) return;
   if (event.target instanceof Element && event.target.closest("input, select, textarea, button, summary, a")) return;
-  if (playButton.disabled || inviteDialog.open) return;
+  if (playButton.disabled || participantsDialog.open) return;
   event.preventDefault();
   togglePlayback();
 });

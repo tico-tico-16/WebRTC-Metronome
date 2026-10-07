@@ -10,7 +10,7 @@ import {
   participantSyncLabel,
   signalingErrorLabel,
 } from "../shared/ui/labels.ts";
-import { peerStatusLabel } from "../host/status.ts";
+import { participantSummary, peerStatusLabel } from "../host/status.ts";
 
 describe("playback phase", () => {
   test("is stopped without a start time", () => {
@@ -105,5 +105,15 @@ describe("host participant status", () => {
     expect(peerStatusLabel(peer("connected", 8, 0.002))).toEqual({ text: "同期済み", tone: "ok" });
     expect(peerStatusLabel(peer("failed", 8, 0.002))).toEqual({ text: "切断", tone: "error" });
     expect(peerStatusLabel(peer("disconnected"))).toEqual({ text: "切断", tone: "error" });
+  });
+
+  test("summarizes participants for the header button: connected count and the worst state", () => {
+    const peer = (status: string, sampleCount = 8, jitter: number | null = 0.002) => ({ status, sampleCount, jitter });
+    expect(participantSummary([])).toEqual({ count: 0, tone: "neutral" });
+    expect(participantSummary([peer("connected"), peer("connected")])).toEqual({ count: 2, tone: "ok" });
+    expect(participantSummary([peer("connected"), peer("connected", 2)])).toEqual({ count: 2, tone: "warn" });
+    expect(participantSummary([peer("connecting")])).toEqual({ count: 0, tone: "warn" });
+    expect(participantSummary([peer("connected"), peer("failed")])).toEqual({ count: 1, tone: "error" });
+    expect(participantSummary([peer("connected", 2), peer("disconnected")])).toEqual({ count: 1, tone: "error" });
   });
 });

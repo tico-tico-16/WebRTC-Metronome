@@ -15,15 +15,19 @@
         <div class="app-header-actions">
           <p class="status-chip" id="connectionStatus" data-tone="neutral">未接続</p>
           <button id="createRoomButton" class="compact" type="button">部屋を作成</button>
-          <button id="inviteButton" class="secondary compact" type="button" hidden>招待</button>
+          <button id="participantsButton" class="secondary compact participants-button" type="button" hidden>
+            <span id="participantsDot" class="status-dot" data-tone="neutral" aria-hidden="true"></span>
+            <span id="participantsButtonLabel">参加者 0</span>
+          </button>
         </div>
       </header>
 
-      <div class="layout">
-        <section class="panel player" aria-label="演奏">
+      <section class="panel player" aria-label="演奏">
+        <div class="player-stage">
           <div id="beatDisplay"></div>
-          <button id="playButton" class="play-button" type="button" data-requires-room>再生</button>
-          <p class="hint">Space キーでも再生・停止できます</p>
+          <button id="playButton" class="play-button" type="button" title="Space キーでも再生・停止できます" aria-keyshortcuts="Space" data-requires-room>再生</button>
+        </div>
+        <div class="player-controls">
           <div class="control-group">
             <span class="control-label" id="bpmLabel">BPM</span>
             <div class="stepper" role="group" aria-labelledby="bpmLabel">
@@ -51,7 +55,7 @@
                 <option value="16">16</option>
               </select>
             </div>
-            <p class="hint">BPM は分母の音符の数です。分子を 0 にすると強拍なしになります。</p>
+            <p class="hint">BPM は分母の音符の数。分子 0 は強拍なし</p>
           </div>
           <label class="toggle">
             <input id="vibrationToggle" type="checkbox" />
@@ -69,35 +73,29 @@
               <p class="hint">この端末の音が他の端末より早く聞こえるときはプラス、遅く聞こえるときはマイナスに調整します。</p>
             </div>
           </details>
-        </section>
-
-        <section class="panel">
-          <div class="section-head">
-            <h2>参加者</h2>
-            <span id="participantCount">0人接続中</span>
-          </div>
-          <ul id="participantList" class="participants"></ul>
-          <div id="participantsEmpty" class="empty-state">
-            <p class="hint">まだ参加者はいません。</p>
-            <button id="emptyInviteButton" class="secondary" type="button" hidden>参加者を招待</button>
-          </div>
-        </section>
-      </div>
+        </div>
+      </section>
     </main>
 
-    <dialog id="inviteDialog" class="invite-dialog" aria-labelledby="inviteTitle">
-      <div class="invite-dialog-body">
-        <div class="invite-dialog-head">
-          <h2 id="inviteTitle">参加者を招待</h2>
-          <button id="inviteCloseButton" class="secondary compact" type="button">閉じる</button>
+    <dialog id="participantsDialog" class="participants-dialog" aria-labelledby="participantsTitle">
+      <div class="dialog-body">
+        <div class="dialog-head">
+          <h2 id="participantsTitle">参加者</h2>
+          <span id="participantCount" class="dialog-count">0人接続中</span>
+          <button id="participantsCloseButton" class="secondary compact" type="button">閉じる</button>
         </div>
-        <p class="hint">参加者にQRコードを読み取ってもらうか、URLを共有してください。</p>
-        <div id="participantQr" class="qr-code" role="img" aria-label="参加者URLのQRコード"></div>
-        <div class="invite-url">
-          <input id="participantUrl" type="text" readonly aria-label="参加者URL" />
-          <button id="copyUrlButton" type="button">URLをコピー</button>
-        </div>
-        <p id="copyStatus" class="hint" role="status"></p>
+        <ul id="participantList" class="participants"></ul>
+        <p id="participantsEmpty" class="hint">まだ参加者はいません。</p>
+        <section class="invite" aria-labelledby="inviteTitle">
+          <h3 id="inviteTitle">招待</h3>
+          <p class="hint">参加者にQRコードを読み取ってもらうか、URLを共有してください。</p>
+          <div id="participantQr" class="qr-code" role="img" aria-label="参加者URLのQRコード"></div>
+          <div class="invite-url">
+            <input id="participantUrl" type="text" readonly aria-label="参加者URL" />
+            <button id="copyUrlButton" type="button">URLをコピー</button>
+          </div>
+          <p id="copyStatus" class="hint" role="status"></p>
+        </section>
       </div>
     </dialog>
 

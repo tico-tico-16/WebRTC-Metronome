@@ -55,6 +55,8 @@ let signalingError: string | null = null;
 
 function setStatus(label: StatusLabel, connectionLost = false): void {
   connectionStatus.textContent = label.text;
+  // Non-error statuses are cut to one line, so the full text stays available on hover.
+  connectionStatus.title = label.text;
   connectionStatus.dataset.tone = label.tone;
   reconnectButton.hidden = !connectionLost;
 }
