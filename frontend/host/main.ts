@@ -91,7 +91,7 @@ let appliedConfig = readConfig();
 
 function setStatus(label: StatusLabel): void {
   connectionStatus.textContent = label.text;
-  // The chip is cut to one line, so the full text stays available on hover.
+  // Non-error statuses are cut to one line, so the full text stays available on hover.
   connectionStatus.title = label.text;
   connectionStatus.dataset.tone = label.tone;
 }

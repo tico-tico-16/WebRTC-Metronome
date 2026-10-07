@@ -166,10 +166,14 @@ h2 {
   background: var(--warn-soft);
 }
 
+/* Errors are shown in full, wrapping if needed: they appear once the connection has already
+   stopped, so the header growing then does not disturb playback. */
 .status-chip[data-tone="error"] {
   border-color: transparent;
+  border-radius: 12px;
   color: var(--error);
   background: var(--error-soft);
+  white-space: normal;
 }
 
 /* Beat display */
