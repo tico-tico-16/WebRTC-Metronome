@@ -73,7 +73,9 @@ h2 {
   /* minmax(0, 1fr) keeps a long one-line status from widening the page past the screen. */
   grid-template-columns: minmax(0, 1fr);
   gap: 16px;
-  width: min(1040px, calc(100% - 32px));
+  /* Use the screen width, up to 1920px so the beat display and controls stay close together on
+     very wide monitors. */
+  width: min(1920px, calc(100% - 48px));
   margin: 0 auto;
   padding: 20px 0 32px;
 }
@@ -428,14 +430,19 @@ summary {
     flex-wrap: nowrap;
   }
 
-  /* The beat display shrinks with the window height (320px down to 200px) so a laptop screen
-     needs no scrolling. svh does not change as mobile browser bars appear and disappear. */
+  /* The beat display fills whatever its column and the window height allow (at least 200px),
+     so it grows on large screens and still fits a laptop screen without scrolling.
+     svh does not change as mobile browser bars appear and disappear. */
   .beat-polygon {
-    width: min(100%, clamp(200px, 100svh - 326px, 320px));
+    width: min(100%, max(200px, 100svh - 326px));
   }
 }
 
 @media (max-width: 760px) {
+  .shell {
+    width: calc(100% - 32px);
+  }
+
   .layout {
     grid-template-columns: 1fr;
   }
@@ -449,7 +456,7 @@ summary {
 
 @media (max-width: 560px) {
   .shell {
-    width: min(100% - 24px, 1040px);
+    width: calc(100% - 24px);
     padding-top: 12px;
   }
 
