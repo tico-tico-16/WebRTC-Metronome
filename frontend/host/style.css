@@ -12,7 +12,7 @@
    so opening the details in the controls never moves the beat display. */
 @media (min-width: 761px) {
   .player {
-    grid-template-columns: minmax(0, 1fr) 360px;
+    grid-template-columns: minmax(0, 1fr) clamp(360px, 26vw, 460px);
     column-gap: 32px;
     align-items: start;
   }
