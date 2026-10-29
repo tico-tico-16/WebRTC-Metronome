@@ -1,4 +1,5 @@
 import type { ControlMessage, MetronomeConfig, SignalMessage, SyncMessage } from "../../shared/types.ts";
+import { IceCandidateQueue } from "../shared/peerSignals.ts";
 import { RTC_CONFIGURATION } from "../shared/webrtcConfig.ts";
 import { createHostSyncHandler } from "./clockSync.ts";
 
@@ -6,6 +7,7 @@ export type HostPeer = {
   id: string;
   name: string;
   pc: RTCPeerConnection;
+  candidates: IceCandidateQueue;
   control: RTCDataChannel;
   sync: RTCDataChannel;
   status: string;
@@ -44,7 +46,8 @@ export class HostWebRTC {
     const pc = new RTCPeerConnection(RTC_CONFIGURATION);
     const control = pc.createDataChannel("control", { ordered: true });
     const sync = pc.createDataChannel("sync", { ordered: false, maxRetransmits: 0 });
-    const peer: HostPeer = { id: clientId, name, pc, control, sync, status: "connecting", rtt: null, offset: null, jitter: null, sampleCount: 0 };
+    const candidates = new IceCandidateQueue(pc, clientId);
+    const peer: HostPeer = { id: clientId, name, pc, candidates, control, sync, status: "connecting", rtt: null, offset: null, jitter: null, sampleCount: 0 };
     this.peers.set(clientId, peer);
 
     pc.addEventListener("icecandidate", (event) => {
@@ -88,12 +91,20 @@ export class HostWebRTC {
       const peer = this.peers.get(message.from);
       if (!peer) return;
 
-      if (message.type === "answer") {
-        await peer.pc.setRemoteDescription(message.sdp);
+      if (message.type === "ice") {
+        await peer.candidates.add(message.candidate);
         return;
       }
 
-      await peer.pc.addIceCandidate(message.candidate);
+      try {
+        await peer.pc.setRemoteDescription(message.sdp);
+      } catch (error) {
+        console.warn(`Could not apply the answer from ${peer.id}`, error);
+        peer.status = "failed";
+        this.emitChange();
+        return;
+      }
+      await peer.candidates.flush();
     }
   }
 

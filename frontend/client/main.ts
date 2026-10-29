@@ -10,6 +10,7 @@ import {
   withConfigChange,
   type PendingPlayback,
 } from "../shared/metronome/configChange.ts";
+import { isHostPeerId } from "../shared/peerSignals.ts";
 import { BeatDisplay } from "../shared/ui/beatDisplay.ts";
 import {
   connectionLabel,
@@ -216,7 +217,8 @@ signaling.onMessage((message: SignalMessage) => {
   }
 
   if (message.type === "offer" || message.type === "ice") {
-    void webRTC.handleSignal(message);
+    // An offer from another participant would replace the live connection to the host.
+    if (isHostPeerId(message.from)) void webRTC.handleSignal(message);
     return;
   }
 
