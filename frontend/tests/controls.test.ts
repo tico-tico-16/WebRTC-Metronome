@@ -51,9 +51,10 @@ describe("control values", () => {
     expect(stepBpm(32, -5)).toBe(30);
   });
 
-  test("clamps output offset to +-200ms and falls back to 0", () => {
-    expect(normalizeOutputOffsetMs("500")).toBe(200);
-    expect(normalizeOutputOffsetMs("-500")).toBe(-200);
+  test("clamps output offset to +-500ms and falls back to 0", () => {
+    expect(normalizeOutputOffsetMs("800")).toBe(500);
+    expect(normalizeOutputOffsetMs("-800")).toBe(-500);
+    expect(normalizeOutputOffsetMs("350")).toBe(350);
     expect(normalizeOutputOffsetMs("-35")).toBe(-35);
     expect(normalizeOutputOffsetMs("-")).toBe(0);
   });
