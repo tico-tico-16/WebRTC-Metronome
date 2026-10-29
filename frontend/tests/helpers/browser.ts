@@ -255,8 +255,10 @@ export class FakeBrowser {
 
 export class FakeDataChannel {
   readyState: RTCDataChannelState = "connecting";
+  readonly sent: string[] = [];
   constructor(readonly label: string) {}
   addEventListener(): void {}
+  send(data: string): void { this.sent.push(data); }
 }
 
 type PendingDescription = { description: RTCSessionDescriptionInit; resolve: () => void; reject: (error: unknown) => void };
@@ -335,5 +337,26 @@ export class FakeRtc {
     if (this.original) Object.defineProperty(globalThis, "RTCPeerConnection", this.original);
     else Reflect.deleteProperty(globalThis, "RTCPeerConnection");
     this.installed = false;
+  }
+}
+
+/** A Web Storage stand-in. Set failGet or failSet to throw as blocked or full storage does. */
+export class FakeStorage {
+  readonly items = new Map<string, string>();
+  failGet = false;
+  failSet = false;
+
+  getItem(key: string): string | null {
+    if (this.failGet) throw new DOMException("The operation is insecure.", "SecurityError");
+    return this.items.get(key) ?? null;
+  }
+
+  setItem(key: string, value: string): void {
+    if (this.failSet) throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
+    this.items.set(key, String(value));
+  }
+
+  removeItem(key: string): void {
+    this.items.delete(key);
   }
 }

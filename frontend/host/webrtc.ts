@@ -1,4 +1,4 @@
-import type { ControlMessage, MetronomeConfig, SignalMessage, SyncMessage } from "../../shared/types.ts";
+import type { ControlMessage, MetronomeConfig, PlaybackPlanMessage, SignalMessage, SyncMessage } from "../../shared/types.ts";
 import { IceCandidateQueue } from "../shared/peerSignals.ts";
 import { RTC_CONFIGURATION } from "../shared/webrtcConfig.ts";
 import { createHostSyncHandler } from "./clockSync.ts";
@@ -17,12 +17,16 @@ export type HostPeer = {
   sampleCount: number;
 };
 
-type StateProvider = () => {
+/** With a song plan, startHostTime and config are the plan's start and first settings. */
+export type HostPlaybackState = {
   isPlaying: boolean;
   config: MetronomeConfig;
   startHostTime: number | null;
   sentHostTime: number;
+  plan?: PlaybackPlanMessage;
 };
+
+type StateProvider = () => HostPlaybackState;
 
 type SendSignal = (message: SignalMessage) => void;
 type ChangeListener = () => void;
@@ -132,6 +136,7 @@ export class HostWebRTC {
       beatUnit: state.config.beatUnit,
       startHostTime: state.startHostTime,
       sentHostTime: state.sentHostTime,
+      ...(state.plan ? { plan: state.plan } : {}),
     });
   }
 

@@ -1,8 +1,7 @@
-import type { ConfigChangeAnchor, MetronomeConfig } from "../../../shared/types.ts";
+import type { ConfigChange, ConfigChangeAnchor, MetronomeConfig, PlaybackPlanMessage } from "../../../shared/types.ts";
 import { TIME_EPSILON_SECONDS } from "./beat.ts";
 
-/** Settings that take effect from an anchor beat. */
-export type ConfigChange = ConfigChangeAnchor & { config: MetronomeConfig };
+export type { ConfigChange };
 
 /** Sent in a config message when the host is not playing: there is no beat to switch on. */
 export const NO_ANCHOR: ConfigChangeAnchor = { applyAtHostTime: 0, beatInBarAtApply: 0 };
@@ -22,17 +21,21 @@ export function queueConfigChange(changes: readonly ConfigChange[], change: Conf
 /**
  * Playback a participant has been told about but not started yet (audio off or clock not stable):
  * the grid starts at startHostTime on beat startBeatInBar with config, then follows the changes in order.
+ * A song plan also sets endHostTime, where playback ends; without one (the plain metronome) it is
+ * absent and playback goes on until stopped.
  */
 export type PendingPlayback = {
   config: MetronomeConfig;
   startHostTime: number;
   startBeatInBar: number;
   changes: ConfigChange[];
+  endHostTime?: number;
 };
 
-/** From a start or state_snapshot message, whose start time is a downbeat. */
-export function pendingFromStart(config: MetronomeConfig, startHostTime: number): PendingPlayback {
-  return { config, startHostTime, startBeatInBar: 1, changes: [] };
+/** From a start or state_snapshot message, whose start time is a downbeat, with the song plan it carries. */
+export function pendingFromStart(config: MetronomeConfig, startHostTime: number, plan?: PlaybackPlanMessage): PendingPlayback {
+  if (plan === undefined) return { config, startHostTime, startBeatInBar: 1, changes: [] };
+  return { config, startHostTime, startBeatInBar: 1, changes: [...plan.changes], endHostTime: plan.endHostTime };
 }
 
 /**
@@ -47,7 +50,7 @@ export function withConfigChange(
 ): PendingPlayback {
   if (anchor === null) return { ...pending, config, changes: [] };
   if (anchor.applyAtHostTime <= pending.startHostTime + TIME_EPSILON_SECONDS) {
-    return { config, startHostTime: anchor.applyAtHostTime, startBeatInBar: anchor.beatInBarAtApply, changes: [] };
+    return { ...pending, config, startHostTime: anchor.applyAtHostTime, startBeatInBar: anchor.beatInBarAtApply, changes: [] };
   }
   return { ...pending, changes: queueConfigChange(pending.changes, { config, ...anchor }) };
 }
@@ -61,7 +64,13 @@ export function pendingPlaybackAt(pending: PendingPlayback, hostTime: number): P
   let current: PendingPlayback = { ...pending, changes: [] };
   for (const change of pending.changes) {
     if (change.applyAtHostTime <= hostTime) {
-      current = { config: change.config, startHostTime: change.applyAtHostTime, startBeatInBar: change.beatInBarAtApply, changes: [] };
+      current = {
+        ...current,
+        config: change.config,
+        startHostTime: change.applyAtHostTime,
+        startBeatInBar: change.beatInBarAtApply,
+        changes: [],
+      };
     } else {
       current.changes.push(change);
     }

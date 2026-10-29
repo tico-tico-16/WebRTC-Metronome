@@ -17,8 +17,12 @@ type ScheduledBeat = BeatInfo & { hostTime: number; heardHostTime: number; confi
 /** A beat not reserved yet, with the settings it will be played with. */
 type UpcomingBeat = { hostTime: number; beatInBar: number; config: MetronomeConfig };
 
-/** Where playback starts when that is not a downbeat, and changes already announced for later beats. */
-export type StartOptions = { startBeatInBar?: number; changes?: readonly ConfigChange[] };
+/**
+ * Where playback starts when that is not a downbeat, changes already announced for later beats, and
+ * when playback ends (a song plan): no beat at or after endHostTime is played. Without an end it
+ * plays until stopped.
+ */
+export type StartOptions = { startBeatInBar?: number; changes?: readonly ConfigChange[]; endHostTime?: number };
 
 /**
  * Output latency to reserve a click ahead by. The value comes straight from the browser, so a
@@ -57,6 +61,12 @@ export class MetronomeEngine {
   private nextBeatIndex = 0;
   private nextBeatInBar = 1;
   private nextBeatHostTime: number | null = null;
+  // The next beat is beat gridBeat of the grid that starts at gridOriginHostTime with the current
+  // settings (the start, or the beat a change took effect on). Its time is computed from the origin
+  // rather than added up beat by beat: at epoch-scale host times each addition rounds, and the sum
+  // drifts off the beat an anchor or a song plan names, and off a device that joined later.
+  private gridOriginHostTime = 0;
+  private gridBeat = 0;
   private config: MetronomeConfig = { bpm: 120, beatsPerBar: 4, beatUnit: 4 };
   private startHostTime: number | null = null;
   private scheduledBeats: ScheduledBeat[] = [];
@@ -67,6 +77,8 @@ export class MetronomeEngine {
   private handledUntilHostTime = 0;
   // From this host time on, the latest settings apply.
   private latestSettingsHostTime = 0;
+  // No beat at or after this host time is played; null plays until stopped.
+  private playbackEndHostTime: number | null = null;
 
   constructor(private readonly dependencies: MetronomeDependencies) {}
 
@@ -77,9 +89,10 @@ export class MetronomeEngine {
     this.nextBeatIndex = Math.max(0, Math.ceil((hostNow - startHostTime) / beatLength));
     const startBeatInBar = clampBeatInBar(options.startBeatInBar ?? 1, config.beatsPerBar);
     this.nextBeatInBar = beatInBarAfter(startBeatInBar, this.nextBeatIndex, config.beatsPerBar);
-    this.nextBeatHostTime = startHostTime + this.nextBeatIndex * beatLength;
+    this.setNextBeat(startHostTime, this.nextBeatIndex);
     this.handledUntilHostTime = hostNow;
     this.latestSettingsHostTime = startHostTime;
+    this.playbackEndHostTime = options.endHostTime ?? null;
     this.pendingChanges = [];
     this.scheduledBeats = [];
     // Queued before the first reservation, so no beat past a change is reserved with the old settings.
@@ -99,7 +112,10 @@ export class MetronomeEngine {
       this.pendingChanges = [];
       this.config = config;
       this.nextBeatInBar = clampBeatInBar(this.nextBeatInBar, config.beatsPerBar);
-      if (this.nextBeatHostTime !== null) this.latestSettingsHostTime = this.nextBeatHostTime;
+      if (this.nextBeatHostTime !== null) {
+        this.latestSettingsHostTime = this.nextBeatHostTime;
+        this.setNextBeat(this.nextBeatHostTime, 0);
+      }
       return;
     }
 
@@ -121,7 +137,7 @@ export class MetronomeEngine {
     const beatLength = secondsPerBeat(config);
     const beats = Math.max(0, Math.ceil((this.handledUntilHostTime - change.applyAtHostTime) / beatLength));
     this.config = config;
-    this.nextBeatHostTime = change.applyAtHostTime + beats * beatLength;
+    this.setNextBeat(change.applyAtHostTime, beats);
     this.nextBeatInBar = beatInBarAfter(change.beatInBarAtApply, beats, config.beatsPerBar);
   }
 
@@ -135,6 +151,7 @@ export class MetronomeEngine {
 
   stop(): void {
     this.startHostTime = null;
+    this.playbackEndHostTime = null;
     this.nextBeatInBar = 1;
     this.nextBeatHostTime = null;
     this.scheduledBeats = [];
@@ -203,7 +220,7 @@ export class MetronomeEngine {
    * settings and this time, the joiner plays the same grid, even while a change is still pending.
    */
   nextStrongBeatHostTime(atHostTime: number): number | null {
-    if (this.startHostTime === null) return null;
+    if (this.startHostTime === null || this.isAtOrAfterEnd(atHostTime)) return null;
     const fromHostTime = Math.max(atHostTime, this.latestSettingsHostTime - TIME_EPSILON_SECONDS);
     for (const beat of this.scheduledBeats) {
       if (beat.hostTime >= fromHostTime && beat.beatInBar === 1) return beat.hostTime;
@@ -212,6 +229,11 @@ export class MetronomeEngine {
       if (beat.hostTime >= fromHostTime && (beat.config.beatsPerBar <= 0 || beat.beatInBar === 1)) return beat.hostTime;
     }
     return null;
+  }
+
+  /** When playback ends, or null when it plays until stopped. */
+  endHostTime(): number | null {
+    return this.playbackEndHostTime;
   }
 
   /**
@@ -246,17 +268,24 @@ export class MetronomeEngine {
   private *upcomingBeats(): Generator<UpcomingBeat, void, undefined> {
     if (this.nextBeatHostTime === null) return;
     let beat: UpcomingBeat = { hostTime: this.nextBeatHostTime, beatInBar: this.nextBeatInBar, config: this.config };
+    // Timed as scheduleAhead will time them, from the grid's origin.
+    let originHostTime = this.gridOriginHostTime;
+    let gridBeat = this.gridBeat;
     let changeIndex = 0;
     while (true) {
       const change = this.pendingChanges[changeIndex];
       if (change && beat.hostTime >= change.applyAtHostTime - TIME_EPSILON_SECONDS) {
         beat = { hostTime: change.applyAtHostTime, beatInBar: change.beatInBarAtApply, config: change.config };
+        originHostTime = change.applyAtHostTime;
+        gridBeat = 0;
         changeIndex += 1;
         continue;
       }
+      if (this.isAtOrAfterEnd(beat.hostTime)) return;
       yield beat;
+      gridBeat += 1;
       beat = {
-        hostTime: beat.hostTime + secondsPerBeat(beat.config),
+        hostTime: originHostTime + gridBeat * secondsPerBeat(beat.config),
         beatInBar: advanceBeatInBar(beat.beatInBar, beat.config.beatsPerBar),
         config: beat.config,
       };
@@ -268,7 +297,7 @@ export class MetronomeEngine {
     let change = this.pendingChanges[0];
     while (change && this.nextBeatHostTime !== null && this.nextBeatHostTime >= change.applyAtHostTime - TIME_EPSILON_SECONDS) {
       this.config = change.config;
-      this.nextBeatHostTime = change.applyAtHostTime;
+      this.setNextBeat(change.applyAtHostTime, 0);
       this.nextBeatInBar = change.beatInBarAtApply;
       this.pendingChanges.shift();
       change = this.pendingChanges[0];
@@ -293,6 +322,11 @@ export class MetronomeEngine {
     while (true) {
       this.applyDueChanges();
       const beatHostTime = this.nextBeatHostTime;
+      if (this.isAtOrAfterEnd(beatHostTime)) {
+        // Every beat is reserved. The reserved beats stay for the display until stop().
+        this.stopTimer();
+        break;
+      }
       const beatLocalTime = this.dependencies.hostToLocalTime(beatHostTime);
       // When the click should be heard, and the earlier time it must be handed to the audio output.
       const heardAudioTime = audioNow + (beatLocalTime - localNow) + this.outputOffsetSeconds;
@@ -316,8 +350,19 @@ export class MetronomeEngine {
       this.handledUntilHostTime = beatHostTime + TIME_EPSILON_SECONDS;
       this.nextBeatIndex += 1;
       this.nextBeatInBar = advanceBeatInBar(this.nextBeatInBar, this.config.beatsPerBar);
-      this.nextBeatHostTime += secondsPerBeat(this.config);
+      this.setNextBeat(this.gridOriginHostTime, this.gridBeat + 1);
     }
+  }
+
+  /** The next beat is beat `beat` of the grid that starts at originHostTime with the current settings. */
+  private setNextBeat(originHostTime: number, beat: number): void {
+    this.gridOriginHostTime = originHostTime;
+    this.gridBeat = beat;
+    this.nextBeatHostTime = originHostTime + beat * secondsPerBeat(this.config);
+  }
+
+  private isAtOrAfterEnd(hostTime: number): boolean {
+    return this.playbackEndHostTime !== null && hostTime >= this.playbackEndHostTime - TIME_EPSILON_SECONDS;
   }
 
   private stopTimer(): void {

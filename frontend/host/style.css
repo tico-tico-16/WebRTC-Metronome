@@ -2,7 +2,8 @@
 
 .player,
 .player-stage,
-.player-controls {
+.player-controls,
+.tab-panel {
   display: grid;
   gap: 16px;
   align-content: start;
@@ -118,6 +119,154 @@
   font-weight: 800;
 }
 
+/* Tabs: the plain metronome or a song. They switch only while stopped. */
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.tab {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 6px 6px 0 0;
+  color: var(--text-secondary);
+  background: transparent;
+  font-weight: 800;
+}
+
+.tab:hover:not(:disabled) {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.tab:disabled {
+  background: transparent;
+}
+
+.tab[aria-selected="true"] {
+  color: var(--accent);
+  box-shadow: inset 0 -3px 0 var(--accent);
+}
+
+/* Song tab */
+
+.song-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.song-picker button {
+  min-height: 44px;
+}
+
+.song-sections {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.song-section {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.song-section.is-current {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.song-section-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.song-section-index {
+  display: grid;
+  place-items: center;
+  min-width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--neutral-strong);
+  font-size: 0.84rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.song-section.is-current .song-section-index {
+  background: var(--accent);
+}
+
+.song-section-head input {
+  min-height: 38px;
+  padding: 0 10px;
+}
+
+.song-section-head button {
+  min-width: 38px;
+  padding: 0 8px;
+}
+
+.song-section-fields {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr 1fr;
+  gap: 8px;
+}
+
+.song-section-fields label {
+  gap: 4px;
+  font-size: 0.8rem;
+}
+
+.song-section-fields input,
+.song-section-fields select {
+  min-height: 38px;
+  padding: 0 8px;
+  text-align: center;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.meter-inputs.small {
+  gap: 4px;
+}
+
+.song-progress {
+  margin: 0;
+  color: var(--accent);
+  font-size: 0.84rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.song-summary {
+  display: flex;
+  justify-content: space-between;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.start-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 88px;
+  gap: 8px;
+}
+
 .participants-dialog {
   width: min(440px, calc(100% - 32px));
   max-height: calc(100svh - 32px);
@@ -223,6 +372,14 @@
   color: #64706b;
   font-size: 0.84rem;
   font-variant-numeric: tabular-nums;
+}
+
+/* On narrow screens the tabs share the width and are as tall as other touch targets. */
+@media (max-width: 760px) {
+  .tab {
+    flex: 1 1 0;
+    min-height: 44px;
+  }
 }
 
 @media (max-width: 560px) {

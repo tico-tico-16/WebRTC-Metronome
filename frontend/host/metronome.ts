@@ -1,6 +1,6 @@
 import type { BeatInfo, BeatPosition, ConfigChangeAnchor, MetronomeConfig } from "../../shared/types.ts";
 import { nowSeconds } from "./clockSync.ts";
-import { MetronomeEngine } from "../shared/metronome/engine.ts";
+import { MetronomeEngine, type StartOptions } from "../shared/metronome/engine.ts";
 import { ClickOutput } from "../shared/metronome/clickOutput.ts";
 import { VibrationOutput } from "../shared/metronome/vibrationOutput.ts";
 
@@ -33,9 +33,13 @@ export class HostMetronomeScheduler {
     this.audio.onStateChange(listener);
   }
 
-  async start(config: MetronomeConfig, startHostTime: number, hostNow: number): Promise<void> {
+  async start(config: MetronomeConfig, startHostTime: number, hostNow: number, options: StartOptions = {}): Promise<void> {
     await this.enableAudio();
-    this.engine.start(config, startHostTime, hostNow);
+    this.engine.start(config, startHostTime, hostNow, options);
+  }
+
+  endHostTime(): number | null {
+    return this.engine.endHostTime();
   }
 
   nextStrongBeatHostTime(atHostTime: number): number | null {

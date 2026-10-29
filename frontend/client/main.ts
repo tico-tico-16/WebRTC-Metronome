@@ -1,4 +1,4 @@
-import type { ControlMessage, MetronomeConfig, SignalMessage } from "../../shared/types.ts";
+import type { ControlMessage, MetronomeConfig, PlaybackPlanMessage, SignalMessage } from "../../shared/types.ts";
 import { ClockSync } from "./clockSync.ts";
 import { beatPositionAt, MetronomeScheduler } from "./metronome.ts";
 import { SignalingClient } from "./signaling.ts";
@@ -16,6 +16,7 @@ import {
   connectionLabel,
   isConnectionLost,
   participantSyncLabel,
+  planSongLine,
   signalingErrorLabel,
   type StatusLabel,
 } from "../shared/ui/labels.ts";
@@ -60,6 +61,8 @@ let isPlaying = false;
 let startHostTime: number | null = null;
 // What the host is playing, kept until this device can start on it (clock stable and audio on).
 let pendingPlayback: PendingPlayback | null = null;
+// The song the host is playing, for the song display; null for the plain metronome.
+let activePlan: PlaybackPlanMessage | null = null;
 let hasJoined = false;
 let peerState = "disconnected";
 let beatFrame: number | null = null;
@@ -86,7 +89,13 @@ function renderBeat(): void {
   const hostNow = clockSync.hostNow();
   // The countdown ends as the first click is heard, using the delay it was reserved with.
   const start = isPlaying ? startHostTime : null;
-  const phase = playbackPhase(hostNow, start === null ? null : scheduler.heardHostTimeFor(start));
+  // A song shows as stopped once its end is heard, even before render() stops it.
+  const end = isPlaying ? activePlan?.endHostTime ?? null : null;
+  const phase = playbackPhase(
+    hostNow,
+    start === null ? null : scheduler.heardHostTimeFor(start),
+    end === null ? null : scheduler.heardHostTimeFor(end),
+  );
   // Until clicks are reserved, follow the grid the host announced, with the changes already due.
   const heardHostTime = hostNow - scheduler.audibleDelaySeconds();
   const planned = pendingPlayback && pendingPlaybackAt(pendingPlayback, heardHostTime);
@@ -96,7 +105,9 @@ function renderBeat(): void {
     ? scheduler.beatPositionHeardAt(hostNow)
       ?? beatPositionAt(heardHostTime, planned?.startHostTime ?? startHostTime, planned?.config ?? config, planned?.startBeatInBar)
     : null;
-  beatDisplay.update({ phase, beat, config: shownConfig });
+  // A song names the section and bar being heard, as on the host.
+  const song = activePlan ? planSongLine(activePlan, phase, heardHostTime) : null;
+  beatDisplay.update({ phase, beat, config: shownConfig, song });
 }
 
 function animateBeat(): void {
@@ -104,7 +115,19 @@ function animateBeat(): void {
   beatFrame = isPlaying ? requestAnimationFrame(animateBeat) : null;
 }
 
+/**
+ * A song ends on its own: once its end is heard, stop as if the host's stop had arrived, so the
+ * display returns to stopped even when that message is late. Not before the first clock sample,
+ * when hostNow() is only this device's clock.
+ */
+function stopAtPlanEnd(): void {
+  const end = activePlan?.endHostTime;
+  if (!isPlaying || end === undefined || clockSync.stats.offset === null) return;
+  if (clockSync.hostNow() >= scheduler.heardHostTimeFor(end)) stopPlayback();
+}
+
 function render(): void {
+  stopAtPlanEnd();
   rttValue.textContent = formatMs(clockSync.stats.rtt);
   offsetValue.textContent = formatMs(clockSync.stats.offset);
   jitterValue.textContent = formatMs(clockSync.stats.jitter);
@@ -136,6 +159,7 @@ function stopPlayback(): void {
   isPlaying = false;
   startHostTime = null;
   pendingPlayback = null;
+  activePlan = null;
   scheduler.stop();
   void wakeLock.release();
 }
@@ -154,6 +178,11 @@ function startWhenStable(): void {
   }
 
   const hostNow = clockSync.hostNow();
+  // A song that has already ended has nothing left to play.
+  if (pendingPlayback.endHostTime !== undefined && hostNow >= pendingPlayback.endHostTime) {
+    stopPlayback();
+    return;
+  }
   // A change whose beat has come becomes the start, so this device joins the grid the host plays now.
   const playback = pendingPlaybackAt(pendingPlayback, hostNow);
   pendingPlayback = null;
@@ -161,6 +190,7 @@ function startWhenStable(): void {
   scheduler.start(playback.config, playback.startHostTime, hostNow, (hostTime) => clockSync.localTimeForHostTime(hostTime), {
     startBeatInBar: playback.startBeatInBar,
     changes: playback.changes,
+    endHostTime: playback.endHostTime,
   });
 }
 
@@ -189,7 +219,8 @@ function handleControl(message: ControlMessage): void {
   if (message.type === "start") {
     isPlaying = true;
     startHostTime = message.startHostTime;
-    pendingPlayback = pendingFromStart(config, message.startHostTime);
+    activePlan = message.plan ?? null;
+    pendingPlayback = pendingFromStart(config, message.startHostTime, message.plan);
     void wakeLock.acquire();
     startWhenStable();
     render();
@@ -199,8 +230,10 @@ function handleControl(message: ControlMessage): void {
   if (message.type === "state_snapshot") {
     isPlaying = message.isPlaying;
     startHostTime = message.startHostTime;
+    // With a plan, startHostTime is the song's original start and the plan rebuilds the grid from it.
+    activePlan = message.isPlaying ? message.plan ?? null : null;
     pendingPlayback = message.isPlaying && message.startHostTime !== null
-      ? pendingFromStart(config, message.startHostTime)
+      ? pendingFromStart(config, message.startHostTime, message.plan)
       : null;
     if (message.isPlaying) {
       void wakeLock.acquire();
