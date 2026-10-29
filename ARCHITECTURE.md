@@ -176,7 +176,7 @@ Technologies: WebRTC DataChannel, `performance.timeOrigin`, `performance.now`
 
 Name: Shared ICE configuration
 
-Description: ホストと参加者は `frontend/shared/webrtcConfig.ts` の共通 `RTCConfiguration` を使います。ICEサーバーには無料公開STUNサーバー `stun:stun.l.google.com:19302` を設定しています。TURNサーバーは設定していないため、対称NATやUDP制限などがあるネットワークではP2P接続を確立できない場合があります。
+Description: ホストと参加者は `frontend/shared/webrtcConfig.ts` の共通 `RTCConfiguration` を使います。ICEサーバーには無料公開STUNサーバー `stun:stun.l.google.com:19302` を設定しています。TURNサーバーは設定していないため、対称NATやUDP制限などがあるネットワークではP2P接続を確立できない場合があります。シグナリングのメッセージは前の処理の完了を待たずに処理されるため、`setRemoteDescription` の完了前に届いたICE候補は `frontend/shared/peerSignals.ts` の `IceCandidateQueue` に保持し、完了後に届いた順で追加します（それ以降の候補はすぐに追加します）。SDPを適用できなかった場合は、ホストの参加者ダイアログでは切断、参加者画面では接続失敗として表示します。参加者は、送信元IDが `host-` で始まるホストからの `offer`・`ice` だけを受け付けます。
 
 Technologies: WebRTC, ICE, STUN
 
