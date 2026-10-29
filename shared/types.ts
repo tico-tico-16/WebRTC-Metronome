@@ -65,15 +65,22 @@ export type PlaybackPlanMessage = {
   totalBars: number;
 };
 
+/**
+ * start and state_snapshot carry a plan while the host plays a song. startHostTime is then the plan's
+ * start (the first beat, of the count-in if there is one) and the settings are its first settings.
+ * With a plan a snapshot sends that original start rather than the next strong beat, because the
+ * participant rebuilds the whole grid from the plan. Without one, playback goes on until stop.
+ */
 export type ControlMessage =
   | ({ type: "config" } & MetronomeConfig & ConfigChangeAnchor)
-  | ({ type: "start"; startHostTime: number; sentHostTime: number } & MetronomeConfig)
+  | ({ type: "start"; startHostTime: number; sentHostTime: number; plan?: PlaybackPlanMessage } & MetronomeConfig)
   | { type: "stop"; sentHostTime: number }
   | ({
       type: "state_snapshot";
       isPlaying: boolean;
       startHostTime: number | null;
       sentHostTime: number;
+      plan?: PlaybackPlanMessage;
     } & MetronomeConfig);
 
 export type SyncMessage =
