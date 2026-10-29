@@ -361,6 +361,34 @@ describe.serial("metronome public behavior", () => {
     expect(host.nextStrongBeatHostTime(3)).toBeNull();
   });
 
+  test("host and participant schedulers switch tempo on the beat the host announces", async () => {
+    const host = new HostMetronomeScheduler();
+    await host.start(config, 1, 0);
+    // The participant's timer ticks 7ms after the host's.
+    browser.timers.advanceTo(7);
+    const client = new MetronomeScheduler();
+    await client.enableAudio();
+    client.start(config, 1, 0.007, (time) => time);
+    browser.timers.advanceTo(2310);
+    const slower = { ...config, bpm: 60 };
+    const anchor = host.anchorForConfigChange(slower, 2.71)!;
+    expect(anchor).toEqual({ applyAtHostTime: 3, beatInBarAtApply: 1 });
+    host.updateConfig(slower, anchor);
+    // By the time the message arrives the participant has reserved 2.5, which the host had not.
+    browser.timers.advanceTo(2370);
+    client.updateConfig(slower, anchor);
+    browser.timers.advanceTo(5100);
+    for (const context of browser.contexts) {
+      const starts = context.oscillators.map((oscillator) => oscillator.starts[0]!);
+      expect(starts).toHaveLength(7);
+      [101, 101.5, 102, 102.5, 103, 104, 105].forEach((time, index) => expect(starts[index]).toBeCloseTo(time, 8));
+      expect(context.oscillators.map((oscillator) => oscillator.frequency.events[0]!.value === 1000))
+        .toEqual([true, false, false, false, true, false, false]);
+    }
+    expect(host.configHeardAt(4)).toEqual(slower);
+    expect(client.configHeardAt(2.9)).toEqual(config);
+  });
+
   test("standalone beat helpers retain pre-start and unmetered behavior", () => {
     for (const [beatAtTime, beatLength] of [[hostBeatAtTime, hostBeatLength], [clientBeatAtTime, clientBeatLength]] as const) {
       expect(beatLength(config)).toBe(0.5);

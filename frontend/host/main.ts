@@ -14,6 +14,7 @@ import {
   stepBpm,
   tapTempoBpm,
 } from "../shared/controlValues.ts";
+import { NO_ANCHOR } from "../shared/metronome/configChange.ts";
 import { BeatDisplay } from "../shared/ui/beatDisplay.ts";
 import { signalingErrorLabel, type StatusLabel } from "../shared/ui/labels.ts";
 import { bindOutputOffsetControl } from "../shared/ui/outputOffsetControl.ts";
@@ -112,6 +113,7 @@ const webRTC = new HostWebRTC(
   () => ({
     isPlaying,
     config: appliedConfig,
+    // A downbeat from which appliedConfig applies, after any change still pending, so one grid follows.
     startHostTime: isPlaying ? scheduler.nextStrongBeatHostTime(nowSeconds()) ?? startHostTime : startHostTime,
     sentHostTime: nowSeconds(),
   }),
@@ -245,7 +247,8 @@ function renderBeat(): void {
   // The countdown ends as the first click is heard, using the delay it was reserved with.
   const start = isPlaying ? startHostTime : null;
   const phase = playbackPhase(hostNow, start === null ? null : scheduler.heardHostTimeFor(start));
-  const config = appliedConfig;
+  // A change shows once its first beat is heard.
+  const config = (phase.kind === "playing" ? scheduler.configHeardAt(hostNow) : null) ?? appliedConfig;
   const beat = phase.kind === "playing"
     ? scheduler.beatPositionHeardAt(hostNow) ?? beatPositionAt(hostNow - scheduler.audibleDelaySeconds(), startHostTime, config)
     : null;
@@ -307,11 +310,19 @@ function showConfig(config: MetronomeConfig): void {
   }
 }
 
+// A change must reach every device before it reserves the beat the change starts on. Devices reserve
+// clicks 0.18s ahead (further by their output latency compensation), check every 25ms, and hear of the
+// change one network delay after it is sent: 0.18 + 0.025 + ~0.1 delay + ~0.1 latency is about 0.4s.
+// A device that still hears of it late continues on the same new grid from its next unreserved beat.
+const CONFIG_CHANGE_LEAD_SECONDS = 0.4;
+
 function broadcastConfig(): void {
   appliedConfig = readConfig();
   showConfig(appliedConfig);
-  scheduler.updateConfig(appliedConfig);
-  webRTC.broadcastControl({ type: "config", ...appliedConfig });
+  // While playing, every device switches on the same announced beat; stopped, there is none to switch on.
+  const anchor = isPlaying ? scheduler.anchorForConfigChange(appliedConfig, nowSeconds() + CONFIG_CHANGE_LEAD_SECONDS) : null;
+  scheduler.updateConfig(appliedConfig, anchor ?? undefined);
+  webRTC.broadcastControl({ type: "config", ...appliedConfig, ...(anchor ?? NO_ANCHOR) });
   renderBeat();
 }
 

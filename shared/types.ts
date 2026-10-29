@@ -25,8 +25,18 @@ export type MetronomeConfig = {
   beatUnit: number;
 };
 
+/**
+ * Where changed settings take effect while playing: from the beat at applyAtHostTime, which is beat
+ * beatInBarAtApply (1-based, 0 without accents) of its bar. The host sends 0 for both when it is not
+ * playing, as there is no beat to switch on.
+ */
+export type ConfigChangeAnchor = {
+  applyAtHostTime: number;
+  beatInBarAtApply: number;
+};
+
 export type ControlMessage =
-  | ({ type: "config" } & MetronomeConfig)
+  | ({ type: "config" } & MetronomeConfig & ConfigChangeAnchor)
   | ({ type: "start"; startHostTime: number; sentHostTime: number } & MetronomeConfig)
   | { type: "stop"; sentHostTime: number }
   | ({

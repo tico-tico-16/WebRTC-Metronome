@@ -3,6 +3,13 @@ import { ClockSync } from "./clockSync.ts";
 import { beatPositionAt, MetronomeScheduler } from "./metronome.ts";
 import { SignalingClient } from "./signaling.ts";
 import { ClientWebRTC } from "./webrtc.ts";
+import {
+  messageAnchor,
+  pendingFromStart,
+  pendingPlaybackAt,
+  withConfigChange,
+  type PendingPlayback,
+} from "../shared/metronome/configChange.ts";
 import { BeatDisplay } from "../shared/ui/beatDisplay.ts";
 import {
   connectionLabel,
@@ -46,7 +53,8 @@ function applyVibrationSetting(): void {
 let config: MetronomeConfig = { bpm: 120, beatsPerBar: 4, beatUnit: 4 };
 let isPlaying = false;
 let startHostTime: number | null = null;
-let pendingStart = false;
+// What the host is playing, kept until this device can start on it (clock stable and audio on).
+let pendingPlayback: PendingPlayback | null = null;
 let hasJoined = false;
 let peerState = "disconnected";
 let beatFrame: number | null = null;
@@ -71,10 +79,16 @@ function renderBeat(): void {
   // The countdown ends as the first click is heard, using the delay it was reserved with.
   const start = isPlaying ? startHostTime : null;
   const phase = playbackPhase(hostNow, start === null ? null : scheduler.heardHostTimeFor(start));
+  // Until clicks are reserved, follow the grid the host announced, with the changes already due.
+  const heardHostTime = hostNow - scheduler.audibleDelaySeconds();
+  const planned = pendingPlayback && pendingPlaybackAt(pendingPlayback, heardHostTime);
+  // A change shows once its first beat is heard.
+  const shownConfig = (phase.kind === "playing" ? scheduler.configHeardAt(hostNow) ?? planned?.config : null) ?? config;
   const beat = phase.kind === "playing"
-    ? scheduler.beatPositionHeardAt(hostNow) ?? beatPositionAt(hostNow - scheduler.audibleDelaySeconds(), startHostTime, config)
+    ? scheduler.beatPositionHeardAt(hostNow)
+      ?? beatPositionAt(heardHostTime, planned?.startHostTime ?? startHostTime, planned?.config ?? config, planned?.startBeatInBar)
     : null;
-  beatDisplay.update({ phase, beat, config });
+  beatDisplay.update({ phase, beat, config: shownConfig });
 }
 
 function animateBeat(): void {
@@ -112,7 +126,7 @@ function applyConfig(message: MetronomeConfig): void {
 function stopPlayback(): void {
   isPlaying = false;
   startHostTime = null;
-  pendingStart = false;
+  pendingPlayback = null;
   scheduler.stop();
 }
 
@@ -122,24 +136,33 @@ function handleHostDisconnected(): void {
 }
 
 function startWhenStable(): void {
-  if (!pendingStart || !isPlaying || startHostTime === null || !clockSync.stats.stable) return;
+  if (pendingPlayback === null || !isPlaying || !clockSync.stats.stable) return;
 
   if (!scheduler.isAudioEnabled()) {
     render();
     return;
   }
 
-  pendingStart = false;
   const hostNow = clockSync.hostNow();
+  // A change whose beat has come becomes the start, so this device joins the grid the host plays now.
+  const playback = pendingPlaybackAt(pendingPlayback, hostNow);
+  pendingPlayback = null;
   scheduler.setOutputOffsetMs(readOutputOffsetMs());
-  scheduler.start(config, startHostTime, hostNow, (hostTime) => clockSync.localTimeForHostTime(hostTime));
+  scheduler.start(playback.config, playback.startHostTime, hostNow, (hostTime) => clockSync.localTimeForHostTime(hostTime), {
+    startBeatInBar: playback.startBeatInBar,
+    changes: playback.changes,
+  });
 }
 
 function handleControl(message: ControlMessage): void {
   if (message.type === "config") {
     applyConfig(message);
-    if (isPlaying) {
-      scheduler.updateConfig(config);
+    const anchor = messageAnchor(message);
+    if (pendingPlayback !== null) {
+      pendingPlayback = withConfigChange(pendingPlayback, config, anchor);
+      startHostTime = pendingPlayback.startHostTime;
+    } else if (isPlaying) {
+      scheduler.updateConfig(config, anchor ?? undefined);
     }
     render();
     return;
@@ -156,7 +179,7 @@ function handleControl(message: ControlMessage): void {
   if (message.type === "start") {
     isPlaying = true;
     startHostTime = message.startHostTime;
-    pendingStart = true;
+    pendingPlayback = pendingFromStart(config, message.startHostTime);
     startWhenStable();
     render();
     return;
@@ -165,7 +188,9 @@ function handleControl(message: ControlMessage): void {
   if (message.type === "state_snapshot") {
     isPlaying = message.isPlaying;
     startHostTime = message.startHostTime;
-    pendingStart = message.isPlaying;
+    pendingPlayback = message.isPlaying && message.startHostTime !== null
+      ? pendingFromStart(config, message.startHostTime)
+      : null;
     if (!message.isPlaying) scheduler.stop();
     startWhenStable();
     render();
