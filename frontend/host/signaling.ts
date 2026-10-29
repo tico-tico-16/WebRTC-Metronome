@@ -1,51 +1,18 @@
 import type { SignalMessage } from "../../shared/types.ts";
-
-type Listener = (message: SignalMessage) => void;
-
-function signalingBaseUrl(): string {
-  const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
-  const configuredUrl = env?.VITE_SIGNALING_BASE_URL?.replace(/\/$/, "");
-  if (configuredUrl) return configuredUrl;
-
-  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${location.hostname}:3001/ws`;
-}
+import { SignalingSocket, signalingBaseUrl, type SignalListener } from "../shared/signalingSocket.ts";
 
 export class SignalingClient {
-  private socket: WebSocket | null = null;
-  private listeners = new Set<Listener>();
+  private readonly socket = new SignalingSocket();
 
   connect(): void {
-    if (
-      this.socket &&
-      (this.socket.readyState === WebSocket.CONNECTING || this.socket.readyState === WebSocket.OPEN)
-    ) {
-      return;
-    }
-
-    this.socket = new WebSocket(`${signalingBaseUrl()}/host`);
-
-    this.socket.addEventListener("open", () => {
-      this.send({ type: "register", role: "host", name: "Host" });
-    });
-
-    this.socket.addEventListener("message", (event) => {
-      const message = JSON.parse(String(event.data)) as SignalMessage;
-      for (const listener of this.listeners) listener(message);
-    });
-
-    this.socket.addEventListener("close", () => {
-      this.socket = null;
-    });
+    this.socket.connect(`${signalingBaseUrl()}/host`, { type: "register", role: "host", name: "Host" });
   }
 
-  onMessage(listener: Listener): void {
-    this.listeners.add(listener);
+  onMessage(listener: SignalListener): void {
+    this.socket.onMessage(listener);
   }
 
   send(message: SignalMessage): void {
-    if (this.socket?.readyState === WebSocket.OPEN) {
-      this.socket.send(JSON.stringify(message));
-    }
+    this.socket.send(message);
   }
 }
