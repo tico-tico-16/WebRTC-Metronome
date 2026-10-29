@@ -49,6 +49,12 @@ Bun標準のテストランナーで、ホスト・参加者の音声スケジ�
 
 各リファクタリングの前に対象部分のテストを追加し、変更後は蓄積した全テストと型チェック・ビルドを実行します。スケジューラの共通化では、既存の公開APIに対するテストを先に追加し、同じ期待値で変更後の挙動を確認しています。
 
+同じチェックはGitHub Actions（[`.github/workflows/ci.yml`](./.github/workflows/ci.yml)）で、`main` へのpushとすべてのプルリクエストごとに自動実行します。CIではあわせて、`bun.lock` を更新せずに依存関係をインストールできること（`bun install --frozen-lockfile`）と、Cloudflareへはデプロイしない `wrangler deploy --dry-run` でWorkerをビルドできることも確認します。dry runに認証情報は不要で、ローカルでは次で確認できます。
+
+```bash
+bun run --cwd server wrangler deploy --dry-run --config wrangler.jsonc
+```
+
 ブラウザでの確認は `bun run dev` で起動し、ホストと参加者の画面で音声有効化、再生・停止、BPM・拍子変更、途中参加、発声補正、ホストの参加者ダイアログ（参加者ボタンの状態と招待）を確認してください。PC幅とスマホ幅の両方で、表示が崩れたり要素が動いたりしないことも確認してください。実際の音響同期と振動モーターの動作には実端末での確認が必要です。構成と既知の課題は [ARCHITECTURE.md](./ARCHITECTURE.md) を参照してください。
 
 ## Deploy
