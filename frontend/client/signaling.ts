@@ -1,59 +1,23 @@
 import type { SignalMessage } from "../../shared/types.ts";
-
-type Listener = (message: SignalMessage) => void;
-type CloseListener = () => void;
-
-function signalingBaseUrl(): string {
-  const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
-  const configuredUrl = env?.VITE_SIGNALING_BASE_URL?.replace(/\/$/, "");
-  if (configuredUrl) return configuredUrl;
-
-  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${location.hostname}:3001/ws`;
-}
+import { SignalingSocket, signalingBaseUrl, type CloseListener, type SignalListener } from "../shared/signalingSocket.ts";
 
 export class SignalingClient {
-  private socket: WebSocket | null = null;
-  private listeners = new Set<Listener>();
-  private closeListeners = new Set<CloseListener>();
+  private readonly socket = new SignalingSocket();
 
   connect(roomId: string, name: string): void {
-    if (
-      this.socket &&
-      (this.socket.readyState === WebSocket.CONNECTING || this.socket.readyState === WebSocket.OPEN)
-    ) {
-      return;
-    }
-
     const url = `${signalingBaseUrl()}/client?room=${encodeURIComponent(roomId)}`;
-    this.socket = new WebSocket(url);
-
-    this.socket.addEventListener("open", () => {
-      this.send({ type: "register", role: "client", roomId, name });
-    });
-
-    this.socket.addEventListener("message", (event) => {
-      const message = JSON.parse(String(event.data)) as SignalMessage;
-      for (const listener of this.listeners) listener(message);
-    });
-
-    this.socket.addEventListener("close", () => {
-      this.socket = null;
-      for (const listener of this.closeListeners) listener();
-    });
+    this.socket.connect(url, { type: "register", role: "client", roomId, name });
   }
 
-  onMessage(listener: Listener): void {
-    this.listeners.add(listener);
+  onMessage(listener: SignalListener): void {
+    this.socket.onMessage(listener);
   }
 
   onClose(listener: CloseListener): void {
-    this.closeListeners.add(listener);
+    this.socket.onClose(listener);
   }
 
   send(message: SignalMessage): void {
-    if (this.socket?.readyState === WebSocket.OPEN) {
-      this.socket.send(JSON.stringify(message));
-    }
+    this.socket.send(message);
   }
 }

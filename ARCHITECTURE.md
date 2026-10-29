@@ -28,6 +28,7 @@
 │   │   └── metronome.ts       # 音声有効状態・時刻変換と共通エンジンへの委譲
 │   ├── shared/
 │   │   ├── webrtcConfig.ts    # ホスト・参加者共通のICEサーバー設定
+│   │   ├── signalingSocket.ts # ホスト・参加者共通のシグナリングWebSocket（登録、ping/pongによる接続維持、受信JSONの解釈）
 │   │   ├── controlValues.ts   # BPM・拍子・発声補正の範囲と正規化、拍子プリセット、BPMの増減、タップテンポ
 │   │   ├── clockStability.ts  # 時計同期が安定したかの判定
 │   │   ├── ui/
@@ -48,6 +49,7 @@
 │   │   ├── metronomeEngine.test.ts # ブラウザに依存しないエンジンのテスト
 │   │   ├── controls.test.ts   # 入力値の正規化、BPMの増減、タップテンポ、接続済み参加者数
 │   │   ├── uiState.test.ts    # 再生状態・同期判定・表示文言
+│   │   ├── signaling.test.ts  # シグナリングWebSocketの接続先・登録・ping/pong・切断時の処理
 │   │   └── beatPolygon.test.ts # 多角形の頂点と点の位置
 │   ├── package.json           # Vite配信、frontend build、QR生成依存
 │   ├── tsconfig.json          # frontend用TypeScript設定
@@ -130,7 +132,11 @@ Description: `server/src/index.ts` が Worker entrypointです。`/ws/host` へ�
 
 WebSocket接続では `Origin` ヘッダーを確認し、`server/wrangler.jsonc` の `ALLOWED_ORIGINS`（カンマ区切り）に一致する場合と、ホスト名が `localhost`・`127.0.0.1`・`[::1]`・プライベートIPv4（10/8、172.16/12、192.168/16）の場合だけ受け付けます。後者は `bun run dev` をLAN内で設定なしに使うためです。`Origin` がない・不正・許可外の接続は、理由を記録して403で拒否します（ブラウザはWebSocket接続に必ず `Origin` を付けます。ブラウザ以外のクライアントは任意の値を送れるため、防げるのは他サイトの画面からの接続です）。受け付けた `Origin` は `frontendOrigin` としてDurable Objectへ渡して参加者URLの組み立てに使い、空の場合は `ALLOWED_ORIGINS` の先頭を使います（シグナリングサーバー自身のOriginは使いません）。判定は `server/src/origins.ts` の純粋関数です。
 
-受信したフレームは `server/src/protocol.ts` で検証します。64KBを超えるもの、テキスト以外、JSONでないもの、未知の `type`（`registered` などサーバーからの送信専用の型を含む）、項目が欠けたり型が違ったりするもの（`register` の `role`、`offer`/`answer`/`ice` の空でない `to` と `sdp`/`candidate` オブジェクト）には `error` を1回返して無視し、ソケットは閉じません。転送するメッセージは既知の項目だけで組み立て直し（`from` はサーバーが付けます）、送信元が加えたほかの項目は相手に届きません。`origins.ts` と `protocol.ts` は `cloudflare:workers` に依存せず、`server/tests/` のBunテストで検証します（型チェックはWorkers型を含めない `server/tests/tsconfig.json` で別に行います）。
+受信したフレームは `server/src/protocol.ts` で検証します。64KBを超えるもの、テキスト以外、JSONでないもの、未知の `type`（`registered` などサーバーからの送信専用の型を含む）、項目が欠けたり型が違ったりするもの（`register` の `role`、`offer`/`answer`/`ice` の空でない `to` と `sdp`/`candidate` オブジェクト）には `error` を1回返して無視し、ソケットは閉じません。転送するメッセージは既知の項目だけで組み立て直し（`from` はサーバーが付けます）、送信元が加えたほかの項目は相手に届きません。
+
+シグナリングのWebSocketは、通信のない時間が続くとキャリアNATや企業のプロキシに切られることがあります。ホストの接続が切れると部屋の参加者全員が切断されるため、ホスト・参加者のブラウザは共通の `frontend/shared/signalingSocket.ts` で、接続中は30秒ごとにテキスト `ping` を送ります。10秒以内に `pong` が返らなければ `close()` を呼び、ブラウザの `close` イベントを待たずにその場で切断時の処理を行います（切れた接続では `close` イベントが遅れることがあるためです）。`pong` はJSONとして解釈する前に取り除き、JSONでない受信は記録して無視します。タイマーは切断時にすべて止めます。サーバー側はDurable Objectのコンストラクタで `setWebSocketAutoResponse` を設定し、`ping` には実行環境が `pong` を直接返すため、ハイバネーション中のDurable Objectを起こしません。
+
+`origins.ts` と `protocol.ts` は `cloudflare:workers` に依存せず、`server/tests/` のBunテストで検証します（型チェックはWorkers型を含めない `server/tests/tsconfig.json` で別に行います）。
 
 Technologies: Cloudflare Workers, Wrangler, TypeScript, WebSocket
 

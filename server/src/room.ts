@@ -58,6 +58,9 @@ function logRoomEvent(event: string, details: Record<string, unknown>): void {
 export class RoomDurableObject extends DurableObject {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+    // Browsers ping their signaling socket so NATs and proxies keep it open. The runtime
+    // answers these pings itself, so they do not wake the object from hibernation.
+    this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
   }
 
   override async fetch(request: Request): Promise<Response> {
