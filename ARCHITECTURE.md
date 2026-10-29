@@ -219,6 +219,8 @@ bun run build:frontend
 
 今後も各リファクタリングの前に対象と影響範囲のテストを追加し、変更後は蓄積した全テストを実行します。不具合修正では、その項目の着手時に正しい期待動作を決め、修正前に失敗する再現テストを追加します。
 
+CIは `.github/workflows/ci.yml` のGitHub Actionsで、`main` へのpushとプルリクエストごとに、`bun install --frozen-lockfile` の後でテスト・型チェック・frontendのビルドと、デプロイしない `wrangler deploy --dry-run` によるWorkerのビルドを実行します。
+
 `server/wrangler.jsonc` を変更した場合は、Wranglerの生成型も更新します。
 
 ```bash
@@ -233,7 +235,7 @@ bun run --cwd server types
 - R03a: Stopは周期タイマー・拍履歴・振動を解除しますが、Web Audioへ予約した未発音の音源は取り消しません。
 - R03b: ホストのAudioContext有効化待ちの間にStopした場合、古いStartが待機完了後に再生を開始し得ます。
 
-これらは挙動保持の共通化と分けて修正します。CI全体の整備、通信・時計同期・サーバーのテストは今回の対象外です。
+これらは挙動保持の共通化と分けて修正します。通信・時計同期・サーバーのテストは今回の対象外です。
 
 ## 5. Future Considerations / Roadmap
 
