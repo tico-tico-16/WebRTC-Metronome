@@ -177,3 +177,88 @@ export class FakeBrowser {
     this.originals.clear();
   }
 }
+
+export class FakeDataChannel {
+  readyState: RTCDataChannelState = "connecting";
+  constructor(readonly label: string) {}
+  addEventListener(): void {}
+}
+
+type PendingDescription = { description: RTCSessionDescriptionInit; resolve: () => void; reject: (error: unknown) => void };
+
+/** setRemoteDescription stays pending until the test settles it, so signals can arrive meanwhile. */
+export class FakePeerConnection {
+  connectionState: RTCPeerConnectionState = "new";
+  remoteDescription: RTCSessionDescriptionInit | null = null;
+  readonly addedCandidates: RTCIceCandidateInit[] = [];
+  /** Candidates with these `candidate` strings are rejected like malformed ones. */
+  readonly invalidCandidates = new Set<string>();
+  closed = false;
+  private pendingRemote: PendingDescription[] = [];
+
+  async createOffer(): Promise<RTCSessionDescriptionInit> { return { type: "offer", sdp: "offer-sdp" }; }
+  async createAnswer(): Promise<RTCSessionDescriptionInit> { return { type: "answer", sdp: "answer-sdp" }; }
+  async setLocalDescription(): Promise<void> {}
+
+  setRemoteDescription(description: RTCSessionDescriptionInit): Promise<void> {
+    return new Promise((resolve, reject) => this.pendingRemote.push({ description, resolve, reject }));
+  }
+
+  /** Applies the oldest pending remote description. */
+  applyRemoteDescription(): void {
+    const pending = this.pendingRemote.shift();
+    if (!pending) throw new Error("No pending remote description");
+    this.remoteDescription = pending.description;
+    pending.resolve();
+  }
+
+  rejectRemoteDescription(error: unknown = new DOMException("Invalid SDP", "OperationError")): void {
+    const pending = this.pendingRemote.shift();
+    if (!pending) throw new Error("No pending remote description");
+    pending.reject(error);
+  }
+
+  async addIceCandidate(candidate: RTCIceCandidateInit): Promise<void> {
+    if (!this.remoteDescription) throw new DOMException("The remote description was null", "InvalidStateError");
+    if (this.invalidCandidates.has(candidate.candidate ?? "")) throw new DOMException("Invalid candidate", "OperationError");
+    this.addedCandidates.push(candidate);
+  }
+
+  createDataChannel(label: string): FakeDataChannel { return new FakeDataChannel(label); }
+  addEventListener(): void {}
+
+  close(): void {
+    this.closed = true;
+    this.connectionState = "closed";
+  }
+}
+
+/** Installs a fake RTCPeerConnection global and records every connection created. */
+export class FakeRtc {
+  readonly connections: FakePeerConnection[] = [];
+  private original: PropertyDescriptor | undefined;
+  private installed = false;
+
+  install(): void {
+    const rtc = this;
+    if (!this.installed) this.original = Object.getOwnPropertyDescriptor(globalThis, "RTCPeerConnection");
+    this.installed = true;
+    Object.defineProperty(globalThis, "RTCPeerConnection", {
+      configurable: true,
+      writable: true,
+      value: class extends FakePeerConnection {
+        constructor() {
+          super();
+          rtc.connections.push(this);
+        }
+      },
+    });
+  }
+
+  restore(): void {
+    if (!this.installed) return;
+    if (this.original) Object.defineProperty(globalThis, "RTCPeerConnection", this.original);
+    else Reflect.deleteProperty(globalThis, "RTCPeerConnection");
+    this.installed = false;
+  }
+}
