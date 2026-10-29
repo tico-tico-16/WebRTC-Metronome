@@ -59,6 +59,7 @@ describe("labels", () => {
     expect(signalingErrorLabel("Room is closed.")).toBe("部屋は閉じられています");
     expect(signalingErrorLabel("Room already has a host.")).toBe("この部屋にはすでにホストがいます");
     expect(signalingErrorLabel("Open the participant URL shared by the host.")).toBe("ホストが共有した参加者URLから開いてください");
+    expect(signalingErrorLabel("Room is full.")).toBe("部屋が満員です");
     expect(signalingErrorLabel("Target client-1234 is not connected.")).toBe("相手との接続が切れています");
     expect(signalingErrorLabel("Something else")).toBe("接続エラー: Something else");
   });

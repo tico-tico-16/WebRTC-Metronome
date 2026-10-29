@@ -55,11 +55,17 @@
 ├── server/
 │   ├── src/
 │   │   ├── index.ts           # Worker entrypoint
-│   │   └── room.ts            # Durable Objectによる部屋単位の接続管理
+│   │   ├── room.ts            # Durable Objectによる部屋単位の接続管理
+│   │   ├── origins.ts         # WebSocket接続元Originの許可判定と参加者URL
+│   │   └── protocol.ts        # シグナリングメッセージの検証、宛先の制限、参加者数の上限
+│   ├── tests/
+│   │   ├── origins.test.ts    # Origin許可判定と参加者URLのテスト
+│   │   ├── protocol.test.ts   # メッセージ検証・宛先の制限・参加者数の上限のテスト
+│   │   └── tsconfig.json      # Workers型を含めないテスト用TypeScript設定
 │   ├── package.json           # Wrangler実行スクリプト
 │   ├── tsconfig.json          # server用TypeScript設定
 │   ├── worker-configuration.d.ts # Wrangler生成のWorker型定義
-│   └── wrangler.jsonc         # Worker、Durable Object、migration、observability設定
+│   └── wrangler.jsonc         # Worker、Durable Object、migration、observability、許可Origin・参加者数の上限の設定
 ├── shared/
 │   └── types.ts               # frontend/server で使う共有型
 ├── scripts/
@@ -122,13 +128,17 @@ Name: Cloudflare Worker signaling server
 
 Description: `server/src/index.ts` が Worker entrypointです。`/ws/host` へのWebSocket接続ではランダムな部屋IDを作成し、`/ws/client?room=<roomId>` へのWebSocket接続では指定された部屋IDを使います。どちらも `env.ROOMS.idFromName(roomId)` で同じ Durable Object に転送します。リクエスト、登録、シグナリング転送、切断などをJSON形式で記録し、Wrangler設定でWorkers Logs、Invocation Logs、Workers Tracesを有効化しています。
 
+WebSocket接続では `Origin` ヘッダーを確認し、`server/wrangler.jsonc` の `ALLOWED_ORIGINS`（カンマ区切り）に一致する場合と、ホスト名が `localhost`・`127.0.0.1`・`[::1]`・プライベートIPv4（10/8、172.16/12、192.168/16）の場合だけ受け付けます。後者は `bun run dev` をLAN内で設定なしに使うためです。`Origin` がない・不正・許可外の接続は、理由を記録して403で拒否します（ブラウザはWebSocket接続に必ず `Origin` を付けます。ブラウザ以外のクライアントは任意の値を送れるため、防げるのは他サイトの画面からの接続です）。受け付けた `Origin` は `frontendOrigin` としてDurable Objectへ渡して参加者URLの組み立てに使い、空の場合は `ALLOWED_ORIGINS` の先頭を使います（シグナリングサーバー自身のOriginは使いません）。判定は `server/src/origins.ts` の純粋関数です。
+
+受信したフレームは `server/src/protocol.ts` で検証します。64KBを超えるもの、テキスト以外、JSONでないもの、未知の `type`（`registered` などサーバーからの送信専用の型を含む）、項目が欠けたり型が違ったりするもの（`register` の `role`、`offer`/`answer`/`ice` の空でない `to` と `sdp`/`candidate` オブジェクト）には `error` を1回返して無視し、ソケットは閉じません。転送するメッセージは既知の項目だけで組み立て直し（`from` はサーバーが付けます）、送信元が加えたほかの項目は相手に届きません。`origins.ts` と `protocol.ts` は `cloudflare:workers` に依存せず、`server/tests/` のBunテストで検証します（型チェックはWorkers型を含めない `server/tests/tsconfig.json` で別に行います）。
+
 Technologies: Cloudflare Workers, Wrangler, TypeScript, WebSocket
 
 ### 3.3. Room Management
 
 Name: Durable Object room registry
 
-Description: `server/src/room.ts` の `RoomDurableObject` が部屋IDごとにホスト1台と複数参加者を管理します。ホストが部屋を作成すると参加者URLが発行され、参加者は共有URLの `room` パラメータで対象部屋へ自動参加します。参加者が接続するとホストへ `client_joined` を通知し、以後の `offer`、`answer`、`ice` を同じ部屋内の宛先へ転送します。部屋一覧や参加者による部屋検索はありません。
+Description: `server/src/room.ts` の `RoomDurableObject` が部屋IDごとにホスト1台と複数参加者を管理します。ホストが部屋を作成すると参加者URLが発行され、参加者は共有URLの `room` パラメータで対象部屋へ自動参加します。参加者が接続するとホストへ `client_joined` を通知し、以後の `offer`、`answer`、`ice` を同じ部屋内の宛先へ転送します。参加者が送れるのはホスト宛て（`host` またはホストのID）だけで、ほかの参加者宛てはエラーを返して記録します。別の参加者からofferを受け取ると、ホストとの接続が切り替わってしまうためです。ホストは参加者IDを宛先にし、自分自身には送れません。1部屋の参加者数（ホストを除く）は `MAX_PARTICIPANTS`（既定50）までで、上限に達した部屋へ参加しようとした参加者には `Room is full.`（画面では「部屋が満員です」）を送って切断します。部屋一覧や参加者による部屋検索はありません。
 
 Technologies: Durable Objects, WebSocket Hibernation API, TypeScript
 

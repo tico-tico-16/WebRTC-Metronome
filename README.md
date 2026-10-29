@@ -29,6 +29,8 @@ bun run dev
 
 同じWi-Fi内のスマホから参加する場合は、ホスト画面も `http://<LAN IP>:3000/host/` で開いてください。ホスト画面に表示される部屋専用URLまたはQRコードも同じLAN IPになります。
 
+シグナリングサーバーは許可したOriginの画面からのWebSocket接続だけを受け付けますが、`localhost`・`127.0.0.1`・`[::1]` とプライベートLANのIPv4アドレス（10.x、172.16〜31.x、192.168.x）のOriginは設定なしで受け付けるため、開発時はそのまま使えます。
+
 WebRTC接続には `stun:stun.l.google.com:19302` を使います。TURNサーバーは設定していないため、制約が厳しいネットワークなどでは接続できない場合があります。
 
 サーバーの型定義はWrangler設定から生成します。`server/wrangler.jsonc` を変更した場合は、次を実行してください。
@@ -58,3 +60,10 @@ Bun標準のテストランナーで、ホスト・参加者の音声スケジ�
 - Frontend: Cloudflare Pages
 - Signaling server: Cloudflare Workers + Durable Objects
 - Production URL: https://metronome.tico-tico.com
+
+シグナリングサーバーの設定は `server/wrangler.jsonc` の `vars` にあります。
+
+- `ALLOWED_ORIGINS`: WebSocket接続を許可するフロントエンドのOrigin（カンマ区切り）。フロントエンドを別のドメインにも置く場合は追加してください。先頭のOriginは、参加者URLの組み立てでOriginが分からない場合の既定値にも使います。
+- `MAX_PARTICIPANTS`: 1部屋の参加者数の上限（ホストを除く、既定50）。
+
+変更した場合は `bun run --cwd server types` で型定義を再生成してください。

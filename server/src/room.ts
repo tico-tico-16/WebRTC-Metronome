@@ -1,5 +1,13 @@
 import { DurableObject } from "cloudflare:workers";
 import type { PeerRole, SignalMessage } from "../../shared/types";
+import { parseAllowedOrigins, participantUrl } from "./origins";
+import {
+  parseMaxParticipants,
+  parseSignalMessage,
+  resolveSignalTarget,
+  roomHasSpace,
+  type PeerSignalMessage,
+} from "./protocol";
 
 type WebSocketAttachment = {
   id: string;
@@ -86,19 +94,32 @@ export class RoomDurableObject extends DurableObject {
   }
 
   override async webSocketMessage(socket: PeerSocket, raw: string | ArrayBuffer): Promise<void> {
-    try {
-      const message = JSON.parse(String(raw)) as SignalMessage;
-      const attachment = readAttachment(socket);
-      logRoomEvent("signal_received", {
+    const attachment = readAttachment(socket);
+    const parsed = parseSignalMessage(raw);
+    if (!parsed.ok) {
+      // One bad frame is answered and ignored; the socket stays open.
+      logRoomEvent("signal_invalid", {
         roomId: attachment?.roomId,
         peerId: attachment?.id,
         role: attachment?.role,
-        type: message.type,
+        reason: parsed.reason,
+        size: typeof raw === "string" ? raw.length : raw.byteLength,
       });
-      await this.routeSignal(socket, message);
+      send(socket, { type: "error", message: parsed.error });
+      return;
+    }
+
+    logRoomEvent("signal_received", {
+      roomId: attachment?.roomId,
+      peerId: attachment?.id,
+      role: attachment?.role,
+      type: parsed.message.type,
+    });
+    try {
+      await this.routeSignal(socket, parsed.message);
     } catch (error) {
-      logRoomEvent("signal_invalid", { error: String(error) });
-      send(socket, { type: "error", message: `Invalid signaling message: ${error}` });
+      logRoomEvent("signal_failed", { roomId: attachment?.roomId, peerId: attachment?.id, error: String(error) });
+      send(socket, { type: "error", message: "Signaling message could not be handled." });
     }
   }
 
@@ -134,7 +155,7 @@ export class RoomDurableObject extends DurableObject {
     return peers;
   }
 
-  private async routeSignal(socket: PeerSocket, message: SignalMessage): Promise<void> {
+  private async routeSignal(socket: PeerSocket, message: PeerSignalMessage): Promise<void> {
     if (message.type === "register") {
       this.registerPeer(socket, message);
       return;
@@ -154,31 +175,39 @@ export class RoomDurableObject extends DurableObject {
       return;
     }
 
-    if (message.type === "offer" || message.type === "answer" || message.type === "ice") {
-      const target = message.to === "host" || message.to === readAttachment(peers.host)?.id
-        ? peers.host
-        : peers.clients.get(message.to);
-
-      if (!target || target.readyState !== WebSocket.OPEN) {
-        logRoomEvent("signal_rejected", {
-          roomId: attachment.roomId,
-          peerId: attachment.id,
-          target: message.to,
-          type: message.type,
-          reason: "target_not_connected",
-        });
-        send(socket, { type: "error", message: `Target ${message.to} is not connected.` });
-        return;
-      }
-
-      send(target, { ...message, from: attachment.id });
-      logRoomEvent("signal_forwarded", {
+    const route = resolveSignalTarget(attachment.role, message.to, readAttachment(peers.host)?.id ?? "");
+    if (route.kind === "forbidden") {
+      logRoomEvent("signal_rejected", {
         roomId: attachment.roomId,
-        from: attachment.id,
-        to: message.to,
+        peerId: attachment.id,
+        target: message.to,
         type: message.type,
+        reason: route.reason,
       });
+      send(socket, { type: "error", message: route.error });
+      return;
     }
+
+    const target = route.kind === "host" ? peers.host : peers.clients.get(route.clientId);
+    if (!target || target.readyState !== WebSocket.OPEN) {
+      logRoomEvent("signal_rejected", {
+        roomId: attachment.roomId,
+        peerId: attachment.id,
+        target: message.to,
+        type: message.type,
+        reason: "target_not_connected",
+      });
+      send(socket, { type: "error", message: `Target ${message.to} is not connected.` });
+      return;
+    }
+
+    send(target, { ...message, from: attachment.id });
+    logRoomEvent("signal_forwarded", {
+      roomId: attachment.roomId,
+      from: attachment.id,
+      to: message.to,
+      type: message.type,
+    });
   }
 
   private registerPeer(socket: PeerSocket, message: Extract<SignalMessage, { type: "register" }>): void {
@@ -219,14 +248,17 @@ export class RoomDurableObject extends DurableObject {
     writeAttachment(socket, registered);
     logRoomEvent("host_registered", { roomId: registered.roomId, peerId: registered.id, name: registered.name });
 
-    const participantUrl = this.createParticipantUrl(registered.roomId);
     send(socket, {
       type: "registered",
       role: "host",
       id: registered.id,
       roomId: registered.roomId,
       hostPresent: true,
-      participantUrl,
+      participantUrl: participantUrl(
+        registered.roomId,
+        registered.frontendOrigin,
+        parseAllowedOrigins(this.env.ALLOWED_ORIGINS),
+      ),
     });
   }
 
@@ -251,6 +283,20 @@ export class RoomDurableObject extends DurableObject {
     if (!peers.host) {
       logRoomEvent("register_rejected", { roomId: attachment.roomId, role: "client", reason: "host_missing" });
       closeWithError(socket, "Room not found or already closed.");
+      return;
+    }
+
+    const maxParticipants = parseMaxParticipants(this.env.MAX_PARTICIPANTS);
+    const clientCount = [...peers.clients.values()].filter((client) => client !== socket).length;
+    if (!roomHasSpace(clientCount, maxParticipants)) {
+      logRoomEvent("register_rejected", {
+        roomId: attachment.roomId,
+        role: "client",
+        reason: "room_full",
+        clientCount,
+        maxParticipants,
+      });
+      closeWithError(socket, "Room is full.");
       return;
     }
 
@@ -296,11 +342,5 @@ export class RoomDurableObject extends DurableObject {
       logRoomEvent("client_removed", { roomId: attachment.roomId, peerId: attachment.id });
       send(peers.host, { type: "client_left", clientId: attachment.id });
     }
-  }
-
-  private createParticipantUrl(roomId: string): string {
-    const socket = this.ctx.getWebSockets().find((candidate) => readAttachment(candidate)?.roomId === roomId);
-    const origin = socket ? readAttachment(socket)?.frontendOrigin ?? "" : "";
-    return `${origin}/client/?room=${encodeURIComponent(roomId)}`;
   }
 }
