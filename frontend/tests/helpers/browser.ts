@@ -255,8 +255,10 @@ export class FakeBrowser {
 
 export class FakeDataChannel {
   readyState: RTCDataChannelState = "connecting";
+  readonly sent: string[] = [];
   constructor(readonly label: string) {}
   addEventListener(): void {}
+  send(data: string): void { this.sent.push(data); }
 }
 
 type PendingDescription = { description: RTCSessionDescriptionInit; resolve: () => void; reject: (error: unknown) => void };

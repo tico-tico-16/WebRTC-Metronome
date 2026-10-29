@@ -3,8 +3,10 @@ export type PlaybackPhase =
   | { kind: "countdown"; seconds: number }
   | { kind: "playing" };
 
-export function playbackPhase(hostNow: number, startHostTime: number | null): PlaybackPhase {
+/** A song plan's end time stops it; without one playback goes on until stopped. */
+export function playbackPhase(hostNow: number, startHostTime: number | null, endHostTime: number | null = null): PlaybackPhase {
   if (startHostTime === null) return { kind: "stopped" };
+  if (endHostTime !== null && hostNow >= endHostTime) return { kind: "stopped" };
   if (hostNow < startHostTime) return { kind: "countdown", seconds: Math.ceil(startHostTime - hostNow) };
   return { kind: "playing" };
 }
