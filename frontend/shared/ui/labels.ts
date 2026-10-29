@@ -23,6 +23,7 @@ const SIGNALING_ERRORS: Record<string, string> = {
   "Room is closed.": "部屋は閉じられています",
   "Room already has a host.": "この部屋にはすでにホストがいます",
   "Open the participant URL shared by the host.": "ホストが共有した参加者URLから開いてください",
+  "Room is full.": "部屋が満員です",
 };
 
 /** The signaling server reports errors in English; known ones are shown in Japanese. */

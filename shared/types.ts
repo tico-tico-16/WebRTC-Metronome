@@ -9,7 +9,6 @@ export type SignalMessage =
       roomId: string;
       hostPresent: boolean;
       participantUrl?: string;
-      participantQrSvg?: string;
     }
   | { type: "host_available"; hostPresent: boolean }
   | { type: "client_joined"; clientId: string; name: string }

@@ -21,7 +21,6 @@ export class ClickOutput {
   async resume(): Promise<void> {
     if (!this.context || !this.audioEnabled) return;
     await this.context.resume();
-    this.audioEnabled = true;
   }
 
   /** Listeners also hear the changes made by enable() and resume(). */

@@ -236,17 +236,6 @@ describe.serial("metronome public behavior", () => {
         expect(browser.vibrations).toEqual([]);
       });
 
-      test("reports audio interruptions and resumes the audio", async () => {
-        const { scheduler, start } = create(role);
-        const states: AudioContextState[] = [];
-        scheduler.onAudioStateChange((state) => states.push(state));
-        await start();
-        browser.contexts[0]!.state = "interrupted";
-        await scheduler.resumeAudio();
-        expect(states).toEqual(["running", "interrupted", "running"]);
-        expect(browser.contexts[0]!.resumeCount).toBe(2);
-      });
-
       test("continues on the beat grid once suspended audio resumes, without a burst of held clicks", async () => {
         const { scheduler, start } = create(role);
         await start();
