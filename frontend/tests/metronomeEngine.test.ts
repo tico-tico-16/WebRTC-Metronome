@@ -1,5 +1,14 @@
 import { expect, test } from "bun:test";
+import type { MetronomeConfig } from "../../shared/types.ts";
 import { beatPositionAt } from "../shared/metronome/beat.ts";
+import {
+  messageAnchor,
+  NO_ANCHOR,
+  pendingFromStart,
+  pendingPlaybackAt,
+  queueConfigChange,
+  withConfigChange,
+} from "../shared/metronome/configChange.ts";
 import { MetronomeEngine } from "../shared/metronome/engine.ts";
 import { ManualTimers } from "./helpers/browser.ts";
 
@@ -321,4 +330,306 @@ test("beatPositionAt derives the position from the start time when nothing is sc
   expect(beatPositionAt(0.5, 1, config)).toEqual({ beatIndex: 0, beatInBar: 1, secondsPerBeat: 0.5, progress: 0 });
   expect(beatPositionAt(2.25, 1, config)).toEqual({ beatIndex: 2, beatInBar: 3, secondsPerBeat: 0.5, progress: 0.5 });
   expect(beatPositionAt(2.5, 1, { ...config, beatsPerBar: 0 })).toEqual({ beatIndex: 3, beatInBar: 0, secondsPerBeat: 0.5, progress: 0 });
+});
+
+type Click = { hostTime: number; accented: boolean };
+const AUDIO_BASE = 50;
+const FOUR_FOUR: MetronomeConfig = { bpm: 120, beatsPerBar: 4, beatUnit: 4 };
+
+/**
+ * A device on a shared clock: timers.nowMs is host time in ms. Its local clock can be offset from
+ * host time and its timer can tick at its own phase, so it reserves beats at other moments than the
+ * host. Clicks are recorded as the host time they are heard, with their accent.
+ */
+function device({ localOffset = 0, timerPhaseMs = 0, outputLatency = 0 } = {}) {
+  const timers = new ManualTimers();
+  timers.nowMs = timerPhaseMs;
+  const clicks: Click[] = [];
+  const engine = new MetronomeEngine({
+    now: () => timers.nowMs / 1000 + localOffset,
+    hostToLocalTime: (hostTime) => hostTime + localOffset,
+    canSchedule: () => true,
+    timers,
+    audio: {
+      currentTime: () => AUDIO_BASE + timers.nowMs / 1000,
+      click: (time, accented) => clicks.push({ hostTime: time + outputLatency - AUDIO_BASE, accented }),
+      outputLatency: () => outputLatency,
+    },
+    vibration: { setEnabled() {}, schedule() {}, cancel() {} },
+  });
+  return { timers, clicks, engine, hostNow: () => timers.nowMs / 1000 };
+}
+
+/** Clicks as [heard host time to 1µs, accented], comparable between devices. */
+function heard(clicks: Click[]): [number, boolean][] {
+  return clicks.map(({ hostTime, accented }) => [Math.round(hostTime * 1e6) / 1e6, accented]);
+}
+
+/** A participant whose clock is 1000s off and whose timer ticks 7ms after the host's. */
+function participantDevice(options: { outputLatency?: number } = {}) {
+  return device({ localOffset: -1000, timerPhaseMs: 7, ...options });
+}
+
+// R02: each device used to apply a change at its own next unreserved beat, which depends on its
+// timer phase and on when the message arrives, so tempo and accents could drift apart for good.
+test("host and participant switch tempo on the anchored beat whichever beats they have reserved", () => {
+  const cases: {
+    from: number;
+    to: number;
+    changeAtMs: number;
+    anchor: { applyAtHostTime: number; beatInBarAtApply: number };
+    expected: [number, boolean][];
+  }[] = [
+    {
+      // The host has not reserved 2.5 yet at 2.31s; the participant has by the time it hears of the change.
+      from: 120, to: 60, changeAtMs: 2310, anchor: { applyAtHostTime: 3, beatInBarAtApply: 1 },
+      expected: [[1, true], [1.5, false], [2, false], [2.5, false], [3, true], [4, false], [5, false], [6, false], [7, true]],
+    },
+    {
+      // The host has not reserved 3 yet at 2.79s; the participant has at 2.85s.
+      from: 60, to: 120, changeAtMs: 2790, anchor: { applyAtHostTime: 4, beatInBarAtApply: 4 },
+      expected: [[1, true], [2, false], [3, false], [4, false], [4.5, true], [5, false], [5.5, false], [6, false], [6.5, true], [7, false]],
+    },
+  ];
+  for (const { from, to, changeAtMs, anchor, expected } of cases) {
+    const host = device();
+    const participant = participantDevice();
+    host.engine.start({ ...FOUR_FOUR, bpm: from }, 1, host.hostNow());
+    participant.engine.start({ ...FOUR_FOUR, bpm: from }, 1, participant.hostNow());
+    host.timers.advanceTo(changeAtMs);
+    host.engine.updateConfig({ ...FOUR_FOUR, bpm: to }, anchor);
+    participant.timers.advanceTo(changeAtMs + 60);
+    participant.engine.updateConfig({ ...FOUR_FOUR, bpm: to }, anchor);
+    host.timers.advanceTo(7100);
+    participant.timers.advanceTo(7100);
+    expect(heard(host.clicks)).toEqual(expected);
+    expect(heard(participant.clicks)).toEqual(expected);
+    expect(participant.engine.nextStrongBeatHostTime(7.1)).toBe(host.engine.nextStrongBeatHostTime(7.1)!);
+  }
+});
+
+test("host and participant change meter on the anchored downbeat", () => {
+  const host = device();
+  const participant = participantDevice();
+  host.engine.start(FOUR_FOUR, 1, host.hostNow());
+  participant.engine.start(FOUR_FOUR, 1, participant.hostNow());
+  const threeFour = { ...FOUR_FOUR, beatsPerBar: 3 };
+  const anchor = { applyAtHostTime: 3, beatInBarAtApply: 1 };
+  host.timers.advanceTo(2310);
+  host.engine.updateConfig(threeFour, anchor);
+  participant.timers.advanceTo(2370);
+  participant.engine.updateConfig(threeFour, anchor);
+  host.timers.advanceTo(7100);
+  participant.timers.advanceTo(7100);
+  // The 4/4 bar ends on 2.5, then 3/4 bars start on 3, 4.5 and 6.
+  const expected: [number, boolean][] = [
+    [1, true], [1.5, false], [2, false], [2.5, false],
+    [3, true], [3.5, false], [4, false], [4.5, true], [5, false], [5.5, false], [6, true], [6.5, false], [7, false],
+  ];
+  expect(heard(host.clicks)).toEqual(expected);
+  expect(heard(participant.clicks)).toEqual(expected);
+  expect(participant.engine.nextStrongBeatHostTime(7.1)).toBe(7.5);
+  expect(host.engine.nextStrongBeatHostTime(7.1)).toBe(7.5);
+});
+
+test("a participant that hears of a change after reserving past its beat continues on the new grid", () => {
+  const sixty = { ...FOUR_FOUR, bpm: 60 };
+  const anchor = { applyAtHostTime: 3, beatInBarAtApply: 1 };
+  const cases: { receiveAtMs: number; lastReserved: [number, boolean] }[] = [
+    // One old-grid beat (3.5) is already handed to the audio output.
+    { receiveAtMs: 3400, lastReserved: [3.5, false] },
+    // Several beats late: everything up to 5 is reserved on the old grid.
+    { receiveAtMs: 5200, lastReserved: [5, true] },
+  ];
+  for (const { receiveAtMs, lastReserved } of cases) {
+    const host = device();
+    const participant = participantDevice();
+    host.engine.start(FOUR_FOUR, 1, host.hostNow());
+    participant.engine.start(FOUR_FOUR, 1, participant.hostNow());
+    host.timers.advanceTo(2310);
+    host.engine.updateConfig(sixty, anchor);
+    host.timers.advanceTo(9100);
+
+    participant.timers.advanceTo(receiveAtMs);
+    const before = heard(participant.clicks);
+    expect(before.at(-1)).toEqual(lastReserved);
+    participant.engine.updateConfig(sixty, anchor);
+    participant.timers.advanceTo(9100);
+    // Reserved clicks cannot be recalled, but no further old-grid beat follows them:
+    // from the next beat on, the participant plays exactly what the host plays.
+    const after = heard(participant.clicks).slice(before.length);
+    expect(after.length).toBeGreaterThan(0);
+    expect(after).toEqual(heard(host.clicks).filter(([time]) => time > lastReserved[0]));
+    expect(participant.engine.nextStrongBeatHostTime(9.1)).toBe(host.engine.nextStrongBeatHostTime(9.1)!);
+  }
+});
+
+test("a late joiner given the host's next strong beat during a pending change lands on the new grid", () => {
+  const host = device();
+  host.engine.start(FOUR_FOUR, 1, host.hostNow());
+  host.timers.advanceTo(2810);
+  // A tempo change mid-bar: from beat 2 of the bar at 3.5, at 60 BPM.
+  const sixty = { ...FOUR_FOUR, bpm: 60 };
+  host.engine.updateConfig(sixty, { applyAtHostTime: 3.5, beatInBarAtApply: 2 });
+  // The snapshot carries the latest settings, so its start must be a downbeat of the new grid.
+  const joinHostTime = host.engine.nextStrongBeatHostTime(host.hostNow());
+  expect(joinHostTime).toBe(6.5);
+
+  const joiner = participantDevice();
+  joiner.timers.advanceTo(2850);
+  joiner.engine.start(sixty, joinHostTime!, joiner.hostNow());
+  host.timers.advanceTo(9100);
+  joiner.timers.advanceTo(9100);
+  expect(heard(joiner.clicks)).toEqual(heard(host.clicks).filter(([time]) => time >= 6.5));
+  expect(heard(host.clicks).filter(([time]) => time >= 3)).toEqual([
+    [3, true], [3.5, false], [4.5, false], [5.5, false], [6.5, true], [7.5, false], [8.5, false],
+  ]);
+});
+
+test("engine anchors a tempo change on the next unreserved beat and a meter change on the next downbeat", () => {
+  const host = device();
+  const sixty = { ...FOUR_FOUR, bpm: 60 };
+  expect(host.engine.anchorForConfigChange(sixty, 0)).toBeNull();
+  host.engine.start(FOUR_FOUR, 1, host.hostNow());
+  host.timers.advanceTo(2810);
+  // Reserved up to 2.5; 3 is the next beat (a downbeat), 3.5 is beat 2.
+  expect(host.engine.anchorForConfigChange(sixty, 3.21)).toEqual({ applyAtHostTime: 3.5, beatInBarAtApply: 2 });
+  // Never a beat already reserved, however early the caller allows.
+  expect(host.engine.anchorForConfigChange(sixty, 0)).toEqual({ applyAtHostTime: 3, beatInBarAtApply: 1 });
+  // A meter change lets the bar in progress end: 3 is too early, so the next downbeat is 5.
+  expect(host.engine.anchorForConfigChange({ ...FOUR_FOUR, beatsPerBar: 3 }, 3.21)).toEqual({ applyAtHostTime: 5, beatInBarAtApply: 1 });
+  expect(host.engine.anchorForConfigChange({ ...FOUR_FOUR, beatUnit: 8 }, 3.21)).toEqual({ applyAtHostTime: 5, beatInBarAtApply: 1 });
+  expect(host.engine.anchorForConfigChange({ ...FOUR_FOUR, beatsPerBar: 0 }, 3.21)).toEqual({ applyAtHostTime: 5, beatInBarAtApply: 0 });
+
+  // A change announced but not reached yet is part of the grid the next anchor is found on.
+  host.engine.updateConfig(sixty, { applyAtHostTime: 3.5, beatInBarAtApply: 2 });
+  const sixtyThreeFour = { ...sixty, beatsPerBar: 3 };
+  const anchor = host.engine.anchorForConfigChange(sixtyThreeFour, 3.21)!;
+  expect(anchor).toEqual({ applyAtHostTime: 6.5, beatInBarAtApply: 1 });
+  host.engine.updateConfig(sixtyThreeFour, anchor);
+  host.timers.advanceTo(10100);
+  expect(heard(host.clicks).filter(([time]) => time >= 3)).toEqual([
+    [3, true], [3.5, false], [4.5, false], [5.5, false], [6.5, true], [7.5, false], [8.5, false], [9.5, true],
+  ]);
+  host.engine.stop();
+  expect(host.engine.anchorForConfigChange(sixty, 0)).toBeNull();
+
+  // Without accents there is no downbeat to wait for: the next beat starts the first bar.
+  const unaccented = device();
+  unaccented.engine.start({ ...FOUR_FOUR, beatsPerBar: 0 }, 1, unaccented.hostNow());
+  unaccented.timers.advanceTo(2810);
+  expect(unaccented.engine.anchorForConfigChange({ ...FOUR_FOUR, beatsPerBar: 3 }, 3.21))
+    .toEqual({ applyAtHostTime: 3.5, beatInBarAtApply: 1 });
+});
+
+test("a participant that starts after hearing of a change lands on the host's grid", () => {
+  const sixty = { ...FOUR_FOUR, bpm: 60 };
+  const anchor = { applyAtHostTime: 3, beatInBarAtApply: 1 };
+  const host = device();
+  host.engine.start(FOUR_FOUR, 1, host.hostNow());
+  host.timers.advanceTo(2310);
+  host.engine.updateConfig(sixty, anchor);
+  host.timers.advanceTo(9100);
+
+  // The participant got the start message, then the change, while its audio was still off.
+  const pending = withConfigChange(pendingFromStart(FOUR_FOUR, 1), sixty, anchor);
+  // Before the anchor, at it, and several beats after it.
+  for (const startAtMs of [2600, 3600, 6020]) {
+    const participant = participantDevice();
+    participant.timers.advanceTo(startAtMs);
+    const hostNow = participant.hostNow();
+    const playback = pendingPlaybackAt(pending, hostNow);
+    participant.engine.start(playback.config, playback.startHostTime, hostNow, {
+      startBeatInBar: playback.startBeatInBar,
+      changes: playback.changes,
+    });
+    participant.timers.advanceTo(9100);
+    expect(heard(participant.clicks)).toEqual(heard(host.clicks).filter(([time]) => time >= hostNow));
+    expect(participant.engine.nextStrongBeatHostTime(hostNow)).toBe(host.engine.nextStrongBeatHostTime(hostNow)!);
+  }
+});
+
+test("a participant starting just before a change reserves nothing of the old tempo after it", () => {
+  // At 240 BPM with 100ms of output latency compensation, the first pass reaches beats up to
+  // 2.98 + 0.18 + 0.1 = 3.26s, so 3.25 would be reserved if the change were applied after starting.
+  const fast = { ...FOUR_FOUR, bpm: 240 };
+  const sixty = { ...FOUR_FOUR, bpm: 60 };
+  const pending = withConfigChange(pendingFromStart(fast, 1), sixty, { applyAtHostTime: 3, beatInBarAtApply: 1 });
+  const participant = participantDevice({ outputLatency: 0.1 });
+  participant.timers.advanceTo(2980);
+  const hostNow = participant.hostNow();
+  const playback = pendingPlaybackAt(pending, hostNow);
+  participant.engine.start(playback.config, playback.startHostTime, hostNow, {
+    startBeatInBar: playback.startBeatInBar,
+    changes: playback.changes,
+  });
+  // Beat 3 had to be handed over at 2.9s with this latency, so it is skipped as late.
+  expect(heard(participant.clicks)).toEqual([]);
+  participant.timers.advanceTo(5100);
+  expect(heard(participant.clicks)).toEqual([[4, false], [5, false]]);
+});
+
+test("engine reports the settings of the click being heard, so a change shows once it sounds", () => {
+  const host = device();
+  host.engine.setOutputOffsetMs(40);
+  expect(host.engine.configHeardAt(5)).toBeNull();
+  host.engine.start(FOUR_FOUR, 1, host.hostNow());
+  host.timers.advanceTo(2310);
+  const threeFour = { ...FOUR_FOUR, beatsPerBar: 3 };
+  host.engine.updateConfig(threeFour, { applyAtHostTime: 3, beatInBarAtApply: 1 });
+  host.timers.advanceTo(3500);
+  // The last 4/4 beat (2.5) is heard until 3.04, when the first 3/4 beat is.
+  expect(host.engine.configHeardAt(3.03)).toEqual(FOUR_FOUR);
+  expect(host.engine.configHeardAt(3.04)).toEqual(threeFour);
+  host.engine.stop();
+  expect(host.engine.configHeardAt(3.04)).toBeNull();
+});
+
+test("config messages sent while stopped carry no anchor", () => {
+  expect(messageAnchor(NO_ANCHOR)).toBeNull();
+  expect(messageAnchor({ applyAtHostTime: Number.NaN, beatInBarAtApply: 1 })).toBeNull();
+  expect(messageAnchor({ applyAtHostTime: 3, beatInBarAtApply: 2 })).toEqual({ applyAtHostTime: 3, beatInBarAtApply: 2 });
+});
+
+test("a change replaces the changes announced for its beat or later", () => {
+  const change = (applyAtHostTime: number, bpm: number) => ({ config: { ...FOUR_FOUR, bpm }, applyAtHostTime, beatInBarAtApply: 1 });
+  const queued = queueConfigChange(queueConfigChange([], change(3, 60)), change(5, 90));
+  expect(queueConfigChange(queued, change(7, 100)).map((queuedChange) => queuedChange.config.bpm)).toEqual([60, 90, 100]);
+  expect(queueConfigChange(queued, change(5, 100)).map((queuedChange) => queuedChange.config.bpm)).toEqual([60, 100]);
+  expect(queueConfigChange(queued, change(4, 100)).map((queuedChange) => queuedChange.config.bpm)).toEqual([60, 100]);
+  expect(queueConfigChange(queued, change(2, 100)).map((queuedChange) => queuedChange.config.bpm)).toEqual([100]);
+});
+
+test("pending playback follows the changes announced before it starts", () => {
+  const sixty = { ...FOUR_FOUR, bpm: 60 };
+  const start = pendingFromStart(FOUR_FOUR, 1);
+  expect(start).toEqual({ config: FOUR_FOUR, startHostTime: 1, startBeatInBar: 1, changes: [] });
+
+  // A change after the start waits for its beat; from that beat on it is the start.
+  const firstChange = { config: sixty, applyAtHostTime: 3.5, beatInBarAtApply: 2 };
+  const pending = withConfigChange(start, sixty, { applyAtHostTime: 3.5, beatInBarAtApply: 2 });
+  expect(pendingPlaybackAt(pending, 3.4)).toEqual({ ...start, changes: [firstChange] });
+  expect(pendingPlaybackAt(pending, 3.5)).toEqual({ config: sixty, startHostTime: 3.5, startBeatInBar: 2, changes: [] });
+
+  // With several changes, the last one due is the start and later ones stay queued.
+  const threeFour = { ...sixty, beatsPerBar: 3 };
+  const secondChange = { config: threeFour, applyAtHostTime: 6.5, beatInBarAtApply: 1 };
+  const twice = withConfigChange(pending, threeFour, { applyAtHostTime: 6.5, beatInBarAtApply: 1 });
+  expect(pendingPlaybackAt(twice, 4)).toEqual({ config: sixty, startHostTime: 3.5, startBeatInBar: 2, changes: [secondChange] });
+  expect(pendingPlaybackAt(twice, 7)).toEqual({ config: threeFour, startHostTime: 6.5, startBeatInBar: 1, changes: [] });
+
+  // A change anchored at or before the start (a snapshot's join beat) replaces the start.
+  expect(withConfigChange(pendingFromStart(sixty, 6.5), threeFour, { applyAtHostTime: 4.5, beatInBarAtApply: 1 }))
+    .toEqual({ config: threeFour, startHostTime: 4.5, startBeatInBar: 1, changes: [] });
+
+  // Without an anchor the settings apply from the start, as before changes were anchored.
+  expect(withConfigChange(pending, threeFour, null)).toEqual({ ...start, config: threeFour });
+});
+
+test("beatPositionAt counts the bar from the beat a grid starts on", () => {
+  // A grid that starts at 3.5 on beat 2 of 4, at 60 BPM.
+  const config = { bpm: 60, beatsPerBar: 4, beatUnit: 4 };
+  expect(beatPositionAt(3.75, 3.5, config, 2)).toEqual({ beatIndex: 0, beatInBar: 2, secondsPerBeat: 1, progress: 0.25 });
+  expect(beatPositionAt(6.5, 3.5, config, 2).beatInBar).toBe(1);
+  expect(beatPositionAt(6.5, 3.5, { ...config, beatsPerBar: 0 }, 0).beatInBar).toBe(0);
 });

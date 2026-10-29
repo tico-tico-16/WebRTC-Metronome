@@ -1,4 +1,4 @@
-import type { BeatInfo, BeatPosition, MetronomeConfig } from "../../shared/types.ts";
+import type { BeatInfo, BeatPosition, ConfigChangeAnchor, MetronomeConfig } from "../../shared/types.ts";
 import { nowSeconds } from "./clockSync.ts";
 import { MetronomeEngine } from "../shared/metronome/engine.ts";
 import { ClickOutput } from "../shared/metronome/clickOutput.ts";
@@ -42,8 +42,16 @@ export class HostMetronomeScheduler {
     return this.engine.nextStrongBeatHostTime(atHostTime);
   }
 
-  updateConfig(config: MetronomeConfig): void {
-    this.engine.updateConfig(config);
+  anchorForConfigChange(config: MetronomeConfig, notBeforeHostTime: number): ConfigChangeAnchor | null {
+    return this.engine.anchorForConfigChange(config, notBeforeHostTime);
+  }
+
+  updateConfig(config: MetronomeConfig, anchor?: ConfigChangeAnchor): void {
+    this.engine.updateConfig(config, anchor);
+  }
+
+  configHeardAt(hostTime: number): MetronomeConfig | null {
+    return this.engine.configHeardAt(hostTime);
   }
 
   setOutputOffsetMs(offsetMs: number): void {

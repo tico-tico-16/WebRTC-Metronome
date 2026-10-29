@@ -1,6 +1,6 @@
-import type { BeatInfo, BeatPosition, MetronomeConfig } from "../../shared/types.ts";
+import type { BeatInfo, BeatPosition, ConfigChangeAnchor, MetronomeConfig } from "../../shared/types.ts";
 import { nowSeconds } from "./clockSync.ts";
-import { MetronomeEngine } from "../shared/metronome/engine.ts";
+import { MetronomeEngine, type StartOptions } from "../shared/metronome/engine.ts";
 import { ClickOutput } from "../shared/metronome/clickOutput.ts";
 import { VibrationOutput } from "../shared/metronome/vibrationOutput.ts";
 
@@ -38,13 +38,23 @@ export class MetronomeScheduler {
     this.audio.onStateChange(listener);
   }
 
-  start(config: MetronomeConfig, startHostTime: number, hostNow: number, hostToLocalTime: (hostTime: number) => number): void {
+  start(
+    config: MetronomeConfig,
+    startHostTime: number,
+    hostNow: number,
+    hostToLocalTime: (hostTime: number) => number,
+    options: StartOptions = {},
+  ): void {
     this.hostToLocalTime = hostToLocalTime;
-    this.engine.start(config, startHostTime, hostNow);
+    this.engine.start(config, startHostTime, hostNow, options);
   }
 
-  updateConfig(config: MetronomeConfig): void {
-    this.engine.updateConfig(config);
+  updateConfig(config: MetronomeConfig, anchor?: ConfigChangeAnchor): void {
+    this.engine.updateConfig(config, anchor);
+  }
+
+  configHeardAt(hostTime: number): MetronomeConfig | null {
+    return this.engine.configHeardAt(hostTime);
   }
 
   setOutputOffsetMs(offsetMs: number): void {
