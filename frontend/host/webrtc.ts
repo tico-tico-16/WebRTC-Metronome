@@ -18,13 +18,15 @@ export type HostPeer = {
 };
 
 /** With a song plan, startHostTime and config are the plan's start and first settings. */
-type StateProvider = () => {
+export type HostPlaybackState = {
   isPlaying: boolean;
   config: MetronomeConfig;
   startHostTime: number | null;
   sentHostTime: number;
   plan?: PlaybackPlanMessage;
 };
+
+type StateProvider = () => HostPlaybackState;
 
 type SendSignal = (message: SignalMessage) => void;
 type ChangeListener = () => void;

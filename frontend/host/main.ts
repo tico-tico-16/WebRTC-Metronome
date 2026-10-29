@@ -3,6 +3,8 @@ import QRCode from "qrcode";
 import { nowSeconds } from "./clockSync.ts";
 import { beatPositionAt, HostMetronomeScheduler } from "./metronome.ts";
 import { SignalingClient } from "./signaling.ts";
+import { SongEditor } from "./songEditor.ts";
+import { hostPlaybackState, songStartMessage } from "./songPlayback.ts";
 import { connectedPeerCount, participantSummary, peerStatusLabel } from "./status.ts";
 import { HostWebRTC } from "./webrtc.ts";
 import {
@@ -15,8 +17,16 @@ import {
   tapTempoBpm,
 } from "../shared/controlValues.ts";
 import { NO_ANCHOR } from "../shared/metronome/configChange.ts";
+import {
+  buildPlaybackPlan,
+  planCountInBars,
+  planPositionAt,
+  planStartPosition,
+  type PlaybackPlan,
+} from "../shared/song/plan.ts";
+import { browserSongStorage, loadLibrary, saveLibrary } from "../shared/song/storage.ts";
 import { BeatDisplay } from "../shared/ui/beatDisplay.ts";
-import { signalingErrorLabel, type StatusLabel } from "../shared/ui/labels.ts";
+import { planSongLine, signalingErrorLabel, songStartLabel, type SongLine, type StatusLabel } from "../shared/ui/labels.ts";
 import { bindOutputOffsetControl } from "../shared/ui/outputOffsetControl.ts";
 import { playbackPhase } from "../shared/ui/playback.ts";
 import { ScreenWakeLock } from "../shared/wakeLock.ts";
@@ -62,9 +72,17 @@ const copyStatus = document.querySelector<HTMLElement>("#copyStatus")!;
 const participantCount = document.querySelector<HTMLElement>("#participantCount")!;
 const participantList = document.querySelector<HTMLUListElement>("#participantList")!;
 const participantsEmpty = document.querySelector<HTMLElement>("#participantsEmpty")!;
+const tabs = {
+  metronome: { tab: document.querySelector<HTMLButtonElement>("#metronomeTab")!, panel: document.querySelector<HTMLElement>("#metronomePanel")! },
+  song: { tab: document.querySelector<HTMLButtonElement>("#songTab")!, panel: document.querySelector<HTMLElement>("#songPanel")! },
+};
+type HostTab = keyof typeof tabs;
 
 const autoCreateRoomStorageKey = "p2p-metronome:auto-create-room";
+const hostTabStorageKey = "p2p-metronome:host-tab";
 const vibrationSupported = "vibrate" in navigator;
+// Playback starts this long after it is asked for, so every participant hears of it in time.
+const START_LEAD_SECONDS = 2;
 
 let isPlaying = false;
 let hasRoom = false;
@@ -73,10 +91,23 @@ let latestSentHostTime = nowSeconds();
 let beatFrame: number | null = null;
 // Set when the browser stops the audio (screen lock, a call, another app) after it has run.
 let audioInterrupted = false;
+// The tab whose playback the play button starts: the plain metronome or the song.
+let activeTab: HostTab = "metronome";
+// The song being played, from start to stop; null for the plain metronome and while stopped.
+let activePlan: PlaybackPlan | null = null;
 const scheduler = new HostMetronomeScheduler();
 const wakeLock = new ScreenWakeLock();
 const readOutputOffsetMs = bindOutputOffsetControl(outputOffsetInput, outputOffsetRange, (offsetMs) => {
   scheduler.setOutputOffsetMs(offsetMs);
+});
+const songStorage = browserSongStorage();
+// Editing a song needs no room; only playing it does.
+const songEditor = new SongEditor(tabs.song.panel, loadLibrary(songStorage), {
+  onLibraryChange: (library) => {
+    saveLibrary(songStorage, library);
+    renderBeat();
+  },
+  onStartChange: () => renderBeat(),
 });
 
 function applyVibrationSetting(): void {
@@ -110,18 +141,36 @@ function setPlaying(nextPlaying: boolean): void {
   vibrationToggle.disabled = !hasRoom || !vibrationSupported;
   playButton.textContent = nextPlaying ? "停止" : "再生";
   playButton.classList.toggle("is-playing", nextPlaying);
+  // Playback belongs to the tab it started from, so the tabs and the song stay as they are until it stops.
+  for (const { tab } of Object.values(tabs)) tab.disabled = nextPlaying;
+  songEditor.setPlaying(nextPlaying);
+}
+
+function showTab(name: HostTab): void {
+  activeTab = name;
+  for (const [key, { tab, panel }] of Object.entries(tabs)) {
+    const selected = key === name;
+    tab.setAttribute("aria-selected", String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+    panel.hidden = !selected;
+  }
+}
+
+function selectTab(name: HostTab): void {
+  if (isPlaying || name === activeTab) return;
+  showTab(name);
+  try {
+    localStorage.setItem(hostTabStorageKey, name);
+  } catch {
+    // The tab is still switched; it is just not remembered for the next visit.
+  }
+  renderBeat();
 }
 
 const signaling = new SignalingClient();
 const webRTC = new HostWebRTC(
   (message) => signaling.send(message),
-  () => ({
-    isPlaying,
-    config: appliedConfig,
-    // A downbeat from which appliedConfig applies, after any change still pending, so one grid follows.
-    startHostTime: isPlaying ? scheduler.nextStrongBeatHostTime(nowSeconds()) ?? startHostTime : startHostTime,
-    sentHostTime: nowSeconds(),
-  }),
+  () => hostPlaybackState({ isPlaying, appliedConfig, startHostTime, activePlan }, scheduler, nowSeconds()),
 );
 
 function formatMs(label: string, seconds: number | null): string {
@@ -246,40 +295,74 @@ copyUrlButton.addEventListener("click", async () => {
   }
 });
 
+/** The open song as it would start now, for the display while stopped on the song tab. */
+function songPreviewPlan(): PlaybackPlan {
+  return buildPlaybackPlan(songEditor.song, { ...songEditor.startOptions(), startHostTime: 0 });
+}
+
 function renderBeat(): void {
   // Draw what is being heard: a click sounds a little after its beat's host time.
   const hostNow = nowSeconds();
   // The countdown ends as the first click is heard, using the delay it was reserved with.
   const start = isPlaying ? startHostTime : null;
-  const phase = playbackPhase(hostNow, start === null ? null : scheduler.heardHostTimeFor(start));
+  // A song shows as stopped once its end is heard, even before the animation loop stops it.
+  const end = isPlaying ? activePlan?.endHostTime ?? null : null;
+  const phase = playbackPhase(
+    hostNow,
+    start === null ? null : scheduler.heardHostTimeFor(start),
+    end === null ? null : scheduler.heardHostTimeFor(end),
+  );
+  const heardHostTime = hostNow - scheduler.audibleDelaySeconds();
+  // Stopped on the song tab, the display shows the tempo, meter and bar the song will start on.
+  const preview = !isPlaying && activeTab === "song" ? songPreviewPlan() : null;
   // A change shows once its first beat is heard.
-  const config = (phase.kind === "playing" ? scheduler.configHeardAt(hostNow) : null) ?? appliedConfig;
+  const config = (phase.kind === "playing" ? scheduler.configHeardAt(hostNow) : null) ?? (activePlan ?? preview)?.config ?? appliedConfig;
   const beat = phase.kind === "playing"
-    ? scheduler.beatPositionHeardAt(hostNow) ?? beatPositionAt(hostNow - scheduler.audibleDelaySeconds(), startHostTime, config)
+    ? scheduler.beatPositionHeardAt(hostNow) ?? beatPositionAt(heardHostTime, startHostTime, config)
     : null;
-  beatDisplay.update({ phase, beat, config });
+  const previewStart = preview && planStartPosition(preview);
+  const song: SongLine | null = activePlan
+    ? planSongLine(activePlan, phase, heardHostTime)
+    : previewStart ? { position: songStartLabel(previewStart) } : null;
+  beatDisplay.update({ phase, beat, config, song });
+  const heard = activePlan && phase.kind === "playing" ? planPositionAt(activePlan, heardHostTime) : null;
+  songEditor.showPlayback(heard, activePlan ? planCountInBars(activePlan) : 0);
 }
 
 function animateBeat(): void {
-  renderBeat();
+  // A song ends on its own once its end is heard; stopping also tells the participants.
+  if (activePlan !== null && nowSeconds() >= scheduler.heardHostTimeFor(activePlan.endHostTime)) stopPlayback();
+  else renderBeat();
   beatFrame = isPlaying ? requestAnimationFrame(animateBeat) : null;
 }
 
 function startPlayback(): void {
-  const config = appliedConfig;
   scheduler.setOutputOffsetMs(readOutputOffsetMs());
-  startHostTime = nowSeconds() + 2;
   latestSentHostTime = nowSeconds();
+  const startAt = latestSentHostTime + START_LEAD_SECONDS;
+  // The song tab plays the open song from the chosen start; the metronome's settings stay as they are.
+  activePlan = activeTab === "song"
+    ? buildPlaybackPlan(songEditor.song, { ...songEditor.startOptions(), startHostTime: startAt })
+    : null;
+  startHostTime = activePlan?.startHostTime ?? startAt;
   setPlaying(true);
   if (beatFrame === null) animateBeat();
-  void scheduler.start(config, startHostTime, latestSentHostTime);
+  if (activePlan) {
+    const { config, changes, endHostTime } = activePlan;
+    void scheduler.start(config, activePlan.startHostTime, latestSentHostTime, { changes, endHostTime });
+    webRTC.broadcastControl(songStartMessage(activePlan, latestSentHostTime));
+  } else {
+    const config = appliedConfig;
+    void scheduler.start(config, startHostTime, latestSentHostTime);
+    webRTC.broadcastControl({ type: "start", ...config, startHostTime, sentHostTime: latestSentHostTime });
+  }
   void wakeLock.acquire();
-  webRTC.broadcastControl({ type: "start", ...config, startHostTime, sentHostTime: latestSentHostTime });
 }
 
 function stopPlayback(): void {
   latestSentHostTime = nowSeconds();
   startHostTime = null;
+  activePlan = null;
   setPlaying(false);
   renderBeat();
   scheduler.stop();
@@ -344,6 +427,11 @@ function showConfig(config: MetronomeConfig): void {
 const CONFIG_CHANGE_LEAD_SECONDS = 0.4;
 
 function broadcastConfig(): void {
+  // A song plays its own settings; the metronome's controls are hidden then, and a change is dropped.
+  if (activePlan !== null) {
+    showConfig(appliedConfig);
+    return;
+  }
   appliedConfig = readConfig();
   showConfig(appliedConfig);
   // While playing, every device switches on the same announced beat; stopped, there is none to switch on.
@@ -390,6 +478,24 @@ function createRoom(): void {
 }
 
 createRoomButton.addEventListener("click", createRoom);
+
+for (const [name, { tab }] of Object.entries(tabs) as [HostTab, (typeof tabs)[HostTab]][]) {
+  tab.addEventListener("click", () => selectTab(name));
+}
+// Arrow keys move between the two tabs, as in other tab lists.
+document.querySelector<HTMLElement>(".tabs")!.addEventListener("keydown", (event) => {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) || isPlaying) return;
+  event.preventDefault();
+  const next: HostTab = event.key === "Home" ? "metronome" : event.key === "End" ? "song" : activeTab === "song" ? "metronome" : "song";
+  selectTab(next);
+  tabs[next].tab.focus();
+});
+
+try {
+  if (localStorage.getItem(hostTabStorageKey) === "song") showTab("song");
+} catch {
+  // Without storage the metronome tab opens, as on a first visit.
+}
 
 setPlaying(false);
 showConfig(appliedConfig);
