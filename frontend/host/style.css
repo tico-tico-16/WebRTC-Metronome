@@ -18,6 +18,14 @@
   }
 }
 
+/* Under the play button while the browser has stopped the host's audio. */
+.audio-notice {
+  color: var(--warn);
+  font-weight: 700;
+  text-align: center;
+  text-wrap: balance;
+}
+
 .participants-button {
   display: inline-flex;
   align-items: center;

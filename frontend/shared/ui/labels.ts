@@ -39,11 +39,16 @@ export function participantSyncLabel(state: {
   connectionLost: boolean;
   stable: boolean;
   isPlaying: boolean;
+  /** Audio is enabled and running now. */
   audioEnabled: boolean;
+  /** The participant has enabled audio before, so audio that is not running was stopped by the browser. */
+  audioWasEnabled: boolean;
 }): StatusLabel {
   if (!state.joined || state.connectionLost) return { text: "待機中", tone: "neutral" };
   if (!state.stable) return { text: "同期中…", tone: "neutral" };
-  if (state.isPlaying && !state.audioEnabled) return { text: "音を有効にしてください", tone: "warn" };
+  if (state.isPlaying && !state.audioEnabled) {
+    return state.audioWasEnabled ? { text: "音声が中断されました", tone: "warn" } : { text: "音を有効にしてください", tone: "warn" };
+  }
   return { text: state.isPlaying ? "再生中" : "同期済み", tone: "ok" };
 }
 

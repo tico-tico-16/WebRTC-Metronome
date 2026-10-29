@@ -29,6 +29,15 @@ export class MetronomeScheduler {
     return this.audio.isEnabled();
   }
 
+  /** Resumes audio the browser stopped after it was enabled; mobile browsers usually need a user gesture. */
+  resumeAudio(): Promise<void> {
+    return this.audio.resume();
+  }
+
+  onAudioStateChange(listener: (state: AudioContextState) => void): void {
+    this.audio.onStateChange(listener);
+  }
+
   start(config: MetronomeConfig, startHostTime: number, hostNow: number, hostToLocalTime: (hostTime: number) => number): void {
     this.hostToLocalTime = hostToLocalTime;
     this.engine.start(config, startHostTime, hostNow);
