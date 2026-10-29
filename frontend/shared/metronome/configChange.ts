@@ -1,8 +1,7 @@
-import type { ConfigChangeAnchor, MetronomeConfig } from "../../../shared/types.ts";
+import type { ConfigChange, ConfigChangeAnchor, MetronomeConfig } from "../../../shared/types.ts";
 import { TIME_EPSILON_SECONDS } from "./beat.ts";
 
-/** Settings that take effect from an anchor beat. */
-export type ConfigChange = ConfigChangeAnchor & { config: MetronomeConfig };
+export type { ConfigChange };
 
 /** Sent in a config message when the host is not playing: there is no beat to switch on. */
 export const NO_ANCHOR: ConfigChangeAnchor = { applyAtHostTime: 0, beatInBarAtApply: 0 };
