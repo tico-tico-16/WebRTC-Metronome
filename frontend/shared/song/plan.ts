@@ -79,6 +79,26 @@ export function planMessage(plan: PlaybackPlan): PlaybackPlanMessage {
   return { changes: plan.changes, endHostTime: plan.endHostTime, segments: plan.segments, totalBars: plan.totalBars };
 }
 
+/** The bars of count-in the plan starts with, 0 without one. Works on a received message too. */
+export function planCountInBars(plan: PlaybackPlanMessage): number {
+  const first = plan.segments[0];
+  return first?.kind === "countIn" ? first.bars : 0;
+}
+
+/** The first bar of the song the plan plays, after any count-in: what is shown before the first beat. */
+export function planStartPosition(plan: PlaybackPlanMessage): PlanPosition | null {
+  const segment = plan.segments.find((candidate) => candidate.kind === "section");
+  if (!segment) return null;
+  return {
+    kind: "section",
+    sectionIndex: segment.sectionIndex,
+    name: segment.name,
+    barInSegment: 1,
+    barInSong: segment.firstBarInSong,
+    totalBars: plan.totalBars,
+  };
+}
+
 /**
  * The segment and bar at hostTime, null before the first segment and from the end on. Times within
  * the epsilon of a boundary count as on it, as the engine's beats do. Works on a received message too.

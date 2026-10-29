@@ -16,6 +16,7 @@ import {
   connectionLabel,
   isConnectionLost,
   participantSyncLabel,
+  planSongLine,
   signalingErrorLabel,
   type StatusLabel,
 } from "../shared/ui/labels.ts";
@@ -104,7 +105,9 @@ function renderBeat(): void {
     ? scheduler.beatPositionHeardAt(hostNow)
       ?? beatPositionAt(heardHostTime, planned?.startHostTime ?? startHostTime, planned?.config ?? config, planned?.startBeatInBar)
     : null;
-  beatDisplay.update({ phase, beat, config: shownConfig });
+  // A song names the section and bar being heard, as on the host.
+  const song = activePlan ? planSongLine(activePlan, phase, heardHostTime) : null;
+  beatDisplay.update({ phase, beat, config: shownConfig, song });
 }
 
 function animateBeat(): void {

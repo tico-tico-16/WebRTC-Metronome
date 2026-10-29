@@ -14,7 +14,7 @@ import {
   type Song,
   type SongSection,
 } from "../shared/song/model.ts";
-import { buildPlaybackPlan, planMessage, planPositionAt } from "../shared/song/plan.ts";
+import { buildPlaybackPlan, planCountInBars, planMessage, planPositionAt, planStartPosition } from "../shared/song/plan.ts";
 
 const DEFAULT_SECTION: SongSection = { name: "", bpm: 120, beatsPerBar: 4, beatUnit: 4, bars: 8 };
 
@@ -242,5 +242,21 @@ describe("playback plan", () => {
     expect(received).toEqual(message);
     const hostTime = plan.segments[2]!.fromHostTime + 1;
     expect(planPositionAt(received, hostTime)).toEqual(planPositionAt(plan, hostTime));
+  });
+
+  test("the start position is the first bar played after the count-in", () => {
+    const plan = buildPlaybackPlan(SONG, { startSectionIndex: 1, startBar: 3, countInBars: 2, startHostTime: 100 });
+    expect(planStartPosition(plan)).toEqual({ kind: "section", sectionIndex: 1, name: "Aメロ", barInSegment: 1, barInSong: 11, totalBars: 24 });
+    expect(planStartPosition(plan)).toEqual(planPositionAt(plan, plan.segments[1]!.fromHostTime));
+    const whole = buildPlaybackPlan(SONG, { startSectionIndex: 0, startBar: 1, countInBars: 0, startHostTime: 100 });
+    expect(planStartPosition(whole)).toEqual(planPositionAt(whole, 100));
+  });
+
+  test("the count-in length is read from the plan", () => {
+    for (const countInBars of [0, 1, 2]) {
+      const plan = buildPlaybackPlan(SONG, { startSectionIndex: 2, startBar: 1, countInBars, startHostTime: 0 });
+      expect(planCountInBars(plan)).toBe(countInBars);
+      expect(planCountInBars(JSON.parse(JSON.stringify(planMessage(plan))))).toBe(countInBars);
+    }
   });
 });
