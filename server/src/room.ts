@@ -5,7 +5,6 @@ import {
   parseMaxParticipants,
   parseSignalMessage,
   resolveSignalTarget,
-  roomHasSpace,
   type PeerSignalMessage,
 } from "./protocol";
 
@@ -291,7 +290,7 @@ export class RoomDurableObject extends DurableObject {
 
     const maxParticipants = parseMaxParticipants(this.env.MAX_PARTICIPANTS);
     const clientCount = [...peers.clients.values()].filter((client) => client !== socket).length;
-    if (!roomHasSpace(clientCount, maxParticipants)) {
+    if (clientCount >= maxParticipants) {
       logRoomEvent("register_rejected", {
         roomId: attachment.roomId,
         role: "client",

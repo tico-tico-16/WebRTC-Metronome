@@ -1,8 +1,8 @@
 // Validation and routing rules for signaling messages. Kept free of Workers runtime imports so Bun tests can load it.
 import type { PeerRole, SignalMessage } from "../../shared/types";
 
-/** SDP offers are a few KB; anything far larger is not a real signaling message. */
-export const MAX_SIGNAL_FRAME_BYTES = 64 * 1024;
+/** SDP offers are a few KB; anything far longer is not a real signaling message. */
+export const MAX_SIGNAL_FRAME_LENGTH = 64 * 1024;
 export const DEFAULT_MAX_PARTICIPANTS = 50;
 
 /** Messages a peer may send to the server; the other types only go from the server to peers. */
@@ -23,8 +23,6 @@ export type SignalTarget =
 
 type JsonObject = Record<string, unknown>;
 
-const encoder = new TextEncoder();
-
 function isObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -43,13 +41,6 @@ function isSessionDescription(value: unknown): value is RTCSessionDescriptionIni
 
 function isIceCandidate(value: unknown): value is RTCIceCandidateInit {
   return isObject(value) && isOptionalString(value.candidate);
-}
-
-function frameTooLarge(raw: string): boolean {
-  // UTF-8 needs at least one byte per UTF-16 code unit and at most three.
-  if (raw.length > MAX_SIGNAL_FRAME_BYTES) return true;
-  if (raw.length * 3 <= MAX_SIGNAL_FRAME_BYTES) return false;
-  return encoder.encode(raw).byteLength > MAX_SIGNAL_FRAME_BYTES;
 }
 
 function readMessage(value: JsonObject): PeerSignalMessage | null {
@@ -90,7 +81,7 @@ export function parseSignalMessage(raw: string | ArrayBuffer): SignalParseResult
   if (typeof raw !== "string") {
     return { ok: false, reason: "binary_frame", error: "Signaling messages must be text." };
   }
-  if (frameTooLarge(raw)) {
+  if (raw.length > MAX_SIGNAL_FRAME_LENGTH) {
     return { ok: false, reason: "too_large", error: "Signaling message is too large." };
   }
 
@@ -132,8 +123,4 @@ export function resolveSignalTarget(senderRole: PeerRole, to: string, hostId: st
 export function parseMaxParticipants(value: unknown): number {
   const parsed = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN;
   return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_PARTICIPANTS;
-}
-
-export function roomHasSpace(clientCount: number, maxParticipants: number): boolean {
-  return clientCount < maxParticipants;
 }

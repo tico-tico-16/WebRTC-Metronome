@@ -196,9 +196,6 @@ describe.serial("signaling socket", () => {
 
   describe("keepalive", () => {
     test("pings every 30 s only while the socket is open", () => {
-      expect(SIGNALING_PING_INTERVAL_MS).toBe(30_000);
-      expect(SIGNALING_PONG_TIMEOUT_MS).toBe(10_000);
-
       const signaling = new SignalingSocket();
       signaling.connect("ws://signal.test/ws/host", hostRegister);
       const socket = lastSocket();

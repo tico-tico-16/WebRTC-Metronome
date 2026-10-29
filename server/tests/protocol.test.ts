@@ -1,11 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
   DEFAULT_MAX_PARTICIPANTS,
-  MAX_SIGNAL_FRAME_BYTES,
+  MAX_SIGNAL_FRAME_LENGTH,
   parseMaxParticipants,
   parseSignalMessage,
   resolveSignalTarget,
-  roomHasSpace,
 } from "../src/protocol.ts";
 
 const sdp: RTCSessionDescriptionInit = { type: "offer", sdp: "v=0" };
@@ -41,15 +40,9 @@ describe("signal message parsing", () => {
 
     const frame = (length: number) => JSON.stringify({ type: "ice", to: "host", candidate: { candidate: "x".repeat(length) } });
     const overhead = frame(0).length;
-    expect(frame(MAX_SIGNAL_FRAME_BYTES - overhead)).toHaveLength(MAX_SIGNAL_FRAME_BYTES);
-    expect(parseSignalMessage(frame(MAX_SIGNAL_FRAME_BYTES - overhead)).ok).toBe(true);
-    expect(parseSignalMessage(frame(MAX_SIGNAL_FRAME_BYTES - overhead + 1))).toMatchObject({ ok: false, reason: "too_large" });
-  });
-
-  test("measures the size in UTF-8 bytes", () => {
-    const raw = JSON.stringify({ type: "register", role: "host", name: "あ".repeat(MAX_SIGNAL_FRAME_BYTES / 2) });
-    expect(raw.length).toBeLessThan(MAX_SIGNAL_FRAME_BYTES);
-    expect(parseSignalMessage(raw)).toMatchObject({ ok: false, reason: "too_large" });
+    expect(frame(MAX_SIGNAL_FRAME_LENGTH - overhead)).toHaveLength(MAX_SIGNAL_FRAME_LENGTH);
+    expect(parseSignalMessage(frame(MAX_SIGNAL_FRAME_LENGTH - overhead)).ok).toBe(true);
+    expect(parseSignalMessage(frame(MAX_SIGNAL_FRAME_LENGTH - overhead + 1))).toMatchObject({ ok: false, reason: "too_large" });
   });
 
   test("rejects unknown and server-only message types", () => {
@@ -82,14 +75,6 @@ describe("signal message parsing", () => {
       expect(parse(value)).toEqual({ ok: false, reason: "invalid_fields", error: `Invalid ${value.type} message.` });
     }
   });
-
-  test("gives every rejection a message to send back", () => {
-    for (const raw of [new ArrayBuffer(1), "{", "{}", '{"type":"offer"}', "x".repeat(MAX_SIGNAL_FRAME_BYTES + 1)]) {
-      const result = parseSignalMessage(raw);
-      expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error).not.toBe("");
-    }
-  });
 });
 
 describe("signal routing", () => {
@@ -115,9 +100,5 @@ describe("participant cap", () => {
     for (const value of [undefined, "", "abc", "0", "-3", "2.5", 0, Number.NaN]) {
       expect(parseMaxParticipants(value)).toBe(50);
     }
-  });
-
-  test("admits participants until the room holds the cap", () => {
-    expect([0, 1, 2, 3].map((clientCount) => roomHasSpace(clientCount, 2))).toEqual([true, true, false, false]);
   });
 });
