@@ -21,8 +21,11 @@ import {
 } from "../shared/ui/labels.ts";
 import { bindOutputOffsetControl } from "../shared/ui/outputOffsetControl.ts";
 import { playbackPhase } from "../shared/ui/playback.ts";
+import { ScreenWakeLock } from "../shared/wakeLock.ts";
 
 const audioGate = document.querySelector<HTMLElement>("#audioGate")!;
+const audioGateTitle = document.querySelector<HTMLElement>("#audioGateTitle")!;
+const audioGateHint = document.querySelector<HTMLElement>("#audioGateHint")!;
 const audioButton = document.querySelector<HTMLButtonElement>("#audioButton")!;
 const audioState = document.querySelector<HTMLElement>("#audioState")!;
 const connectionStatus = document.querySelector<HTMLElement>("#connectionStatus")!;
@@ -43,6 +46,7 @@ const signaling = new SignalingClient();
 const webRTC = new ClientWebRTC((message) => signaling.send(message));
 const clockSync = new ClockSync((message) => webRTC.sendSync(message));
 const scheduler = new MetronomeScheduler();
+const wakeLock = new ScreenWakeLock();
 const readOutputOffsetMs = bindOutputOffsetControl(outputOffsetInput, outputOffsetRange, (offsetMs) => {
   scheduler.setOutputOffsetMs(offsetMs);
 });
@@ -59,6 +63,9 @@ let pendingPlayback: PendingPlayback | null = null;
 let hasJoined = false;
 let peerState = "disconnected";
 let beatFrame: number | null = null;
+// Once audio has been enabled, audio that is not running was stopped by the browser
+// (screen lock, a call, another app) and the gate comes back to resume it.
+let audioWasEnabled = false;
 // The server sends an error just before closing the socket; keep it rather than a generic message.
 let signalingError: string | null = null;
 
@@ -108,6 +115,7 @@ function render(): void {
     stable: clockSync.stats.stable,
     isPlaying,
     audioEnabled: scheduler.isAudioEnabled(),
+    audioWasEnabled,
   });
   syncStatus.textContent = label.text;
   syncStatus.dataset.tone = label.tone;
@@ -129,6 +137,7 @@ function stopPlayback(): void {
   startHostTime = null;
   pendingPlayback = null;
   scheduler.stop();
+  void wakeLock.release();
 }
 
 function handleHostDisconnected(): void {
@@ -181,6 +190,7 @@ function handleControl(message: ControlMessage): void {
     isPlaying = true;
     startHostTime = message.startHostTime;
     pendingPlayback = pendingFromStart(config, message.startHostTime);
+    void wakeLock.acquire();
     startWhenStable();
     render();
     return;
@@ -192,7 +202,12 @@ function handleControl(message: ControlMessage): void {
     pendingPlayback = message.isPlaying && message.startHostTime !== null
       ? pendingFromStart(config, message.startHostTime)
       : null;
-    if (!message.isPlaying) scheduler.stop();
+    if (message.isPlaying) {
+      void wakeLock.acquire();
+    } else {
+      scheduler.stop();
+      void wakeLock.release();
+    }
     startWhenStable();
     render();
   }
@@ -272,14 +287,54 @@ function joinSharedRoom(): void {
   render();
 }
 
-audioButton.addEventListener("click", () => {
-  void scheduler.enableAudio().then(() => {
-    audioGate.hidden = true;
-    audioState.hidden = false;
+/**
+ * Shows the gate again while audio that was enabled is stopped, and picks up again once it runs.
+ * The first-time texts are not needed after that, so the gate keeps the resume texts.
+ */
+function handleAudioState(): void {
+  if (!audioWasEnabled) return;
+  const running = scheduler.isAudioEnabled();
+  audioGate.hidden = running;
+  audioState.hidden = !running;
+  if (running) {
+    // A start still waiting for audio proceeds now. An engine that had already started needs nothing:
+    // it stopped scheduling while canSchedule() was false, and scheduleAhead maps each beat with the
+    // current clocks (audioNow + (beatLocalTime - localNow) + offset), so the time the audio clock
+    // stood still is absorbed, the beats that passed are skipped, and clicks continue on the beat grid.
     startWhenStable();
-    render();
+  } else {
+    audioGateTitle.textContent = "音声が中断されました";
+    audioGateHint.textContent = "画面ロックや着信などで音が止まりました。ボタンを押すと再開します。";
+    audioButton.textContent = "音を再開する";
+  }
+  render();
+}
+
+function resumeInterruptedAudio(): void {
+  if (!audioWasEnabled || scheduler.isAudioEnabled()) return;
+  // A refused resume leaves the gate up for the next try.
+  void scheduler.resumeAudio().then(handleAudioState, () => {});
+}
+
+scheduler.onAudioStateChange(handleAudioState);
+
+audioButton.addEventListener("click", () => {
+  if (audioWasEnabled) {
+    resumeInterruptedAudio();
+    return;
+  }
+  void scheduler.enableAudio().then(() => {
+    audioWasEnabled = true;
+    handleAudioState();
   });
 });
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") resumeInterruptedAudio();
+});
+// Browsers resume audio only from a user gesture, so any tap or key press tries again. A touch counts
+// as a gesture on pointerup, a mouse on pointerdown.
+for (const type of ["pointerdown", "pointerup", "keydown"]) document.addEventListener(type, resumeInterruptedAudio);
 
 reconnectButton.addEventListener("click", () => location.reload());
 

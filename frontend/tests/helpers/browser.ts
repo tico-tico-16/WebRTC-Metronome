@@ -101,17 +101,46 @@ export class FakeOscillator {
   stop(time: number): void { this.stops.push(time); }
 }
 
-export class FakeAudioContext {
-  state: AudioContextState = "suspended";
+/**
+ * Setting `state` fires "statechange" (listeners and onstatechange), as the browser does when it
+ * suspends or interrupts a context. Like a real context, the audio clock stands still while a
+ * context that has run is not running; before it first runs it follows the manual clock.
+ */
+export class FakeAudioContext extends EventTarget {
   readonly destination = {};
   readonly oscillators: FakeOscillator[] = [];
   readonly gains: FakeGain[] = [];
   outputLatency = 0;
   resumeCount = 0;
+  onstatechange: ((event: Event) => void) | null = null;
+  private currentState: AudioContextState = "suspended";
+  private stoppedAtMs: number | null = null;
+  private stoppedSeconds = 0;
 
-  constructor(private browser: FakeBrowser) {}
+  constructor(private browser: FakeBrowser) {
+    super();
+  }
 
-  get currentTime(): number { return 100 + this.browser.timers.nowMs / 1000; }
+  get state(): AudioContextState { return this.currentState; }
+
+  set state(next: AudioContextState) {
+    if (next === this.currentState) return;
+    const nowMs = this.browser.timers.nowMs;
+    if (this.currentState === "running") {
+      this.stoppedAtMs = nowMs;
+    } else if (next === "running" && this.stoppedAtMs !== null) {
+      this.stoppedSeconds += (nowMs - this.stoppedAtMs) / 1000;
+      this.stoppedAtMs = null;
+    }
+    this.currentState = next;
+    const event = new Event("statechange");
+    this.dispatchEvent(event);
+    this.onstatechange?.(event);
+  }
+
+  get currentTime(): number {
+    return 100 + (this.stoppedAtMs ?? this.browser.timers.nowMs) / 1000 - this.stoppedSeconds;
+  }
 
   async resume(): Promise<void> {
     this.resumeCount += 1;
@@ -132,11 +161,31 @@ export class FakeAudioContext {
   }
 }
 
+export class FakeWakeLockSentinel extends EventTarget {
+  released = false;
+  readonly type = "screen";
+
+  async release(): Promise<void> {
+    if (this.released) return;
+    this.released = true;
+    this.dispatchEvent(new Event("release"));
+  }
+}
+
+export class FakeDocument extends EventTarget {
+  visibilityState: DocumentVisibilityState = "visible";
+}
+
 export class FakeBrowser {
   readonly timers = new ManualTimers();
   readonly contexts: FakeAudioContext[] = [];
   readonly vibrations: { durationMs: number; atMs: number }[] = [];
+  readonly document = new FakeDocument();
+  readonly wakeLocks: FakeWakeLockSentinel[] = [];
+  wakeLockRequests = 0;
   resumeAudio: () => Promise<void> = () => Promise.resolve();
+  /** Runs before each wake lock is granted; reject to deny it. */
+  grantWakeLock: () => Promise<void> = () => Promise.resolve();
   private originals = new Map<string, PropertyDescriptor | undefined>();
 
   get clicks(): { time: number; accented: boolean }[] {
@@ -145,17 +194,43 @@ export class FakeBrowser {
     ));
   }
 
-  install(vibrationSupported = true): void {
+  get activeWakeLocks(): FakeWakeLockSentinel[] {
+    return this.wakeLocks.filter((sentinel) => !sentinel.released);
+  }
+
+  /** Browsers release screen wake locks when the page is hidden, then report the change. */
+  setVisibility(state: DocumentVisibilityState): void {
+    this.document.visibilityState = state;
+    if (state === "hidden") for (const sentinel of this.wakeLocks) void sentinel.release();
+    this.document.dispatchEvent(new Event("visibilitychange"));
+  }
+
+  install(vibrationSupported = true, wakeLockSupported = true): void {
     const browser = this;
+    const navigator: Record<string, unknown> = {};
+    if (vibrationSupported) {
+      navigator.vibrate = (durationMs: number) => {
+        this.vibrations.push({ durationMs, atMs: this.timers.nowMs });
+        return true;
+      };
+    }
+    if (wakeLockSupported) {
+      navigator.wakeLock = {
+        request: async (type: WakeLockType) => {
+          this.wakeLockRequests += 1;
+          if (type !== "screen" || this.document.visibilityState !== "visible") throw new Error("NotAllowedError");
+          await this.grantWakeLock();
+          const sentinel = new FakeWakeLockSentinel();
+          this.wakeLocks.push(sentinel);
+          return sentinel;
+        },
+      };
+    }
     const globals = {
       window: this.timers,
       performance: { timeOrigin: 0, now: () => this.timers.nowMs },
-      navigator: vibrationSupported ? {
-        vibrate: (durationMs: number) => {
-          this.vibrations.push({ durationMs, atMs: this.timers.nowMs });
-          return true;
-        },
-      } : {},
+      document: this.document,
+      navigator,
       AudioContext: class extends FakeAudioContext {
         constructor() {
           super(browser);

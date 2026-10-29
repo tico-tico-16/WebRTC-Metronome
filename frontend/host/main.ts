@@ -19,6 +19,7 @@ import { BeatDisplay } from "../shared/ui/beatDisplay.ts";
 import { signalingErrorLabel, type StatusLabel } from "../shared/ui/labels.ts";
 import { bindOutputOffsetControl } from "../shared/ui/outputOffsetControl.ts";
 import { playbackPhase } from "../shared/ui/playback.ts";
+import { ScreenWakeLock } from "../shared/wakeLock.ts";
 
 const bpmInput = document.querySelector<HTMLInputElement>("#bpmInput")!;
 const bpmRange = document.querySelector<HTMLInputElement>("#bpmRange")!;
@@ -41,6 +42,7 @@ const meterPresetButtons = METER_PRESETS.map((preset) => {
 document.querySelector<HTMLElement>("#meterPresets")!.append(...meterPresetButtons.map(({ button }) => button));
 const roomControls = document.querySelectorAll<HTMLButtonElement | HTMLInputElement | HTMLSelectElement>("[data-requires-room]");
 const playButton = document.querySelector<HTMLButtonElement>("#playButton")!;
+const audioNotice = document.querySelector<HTMLElement>("#audioNotice")!;
 const createRoomButton = document.querySelector<HTMLButtonElement>("#createRoomButton")!;
 const outputOffsetInput = document.querySelector<HTMLInputElement>("#outputOffsetInput")!;
 const outputOffsetRange = document.querySelector<HTMLInputElement>("#outputOffsetRange")!;
@@ -69,7 +71,10 @@ let hasRoom = false;
 let startHostTime: number | null = null;
 let latestSentHostTime = nowSeconds();
 let beatFrame: number | null = null;
+// Set when the browser stops the audio (screen lock, a call, another app) after it has run.
+let audioInterrupted = false;
 const scheduler = new HostMetronomeScheduler();
+const wakeLock = new ScreenWakeLock();
 const readOutputOffsetMs = bindOutputOffsetControl(outputOffsetInput, outputOffsetRange, (offsetMs) => {
   scheduler.setOutputOffsetMs(offsetMs);
 });
@@ -268,6 +273,7 @@ function startPlayback(): void {
   setPlaying(true);
   if (beatFrame === null) animateBeat();
   void scheduler.start(config, startHostTime, latestSentHostTime);
+  void wakeLock.acquire();
   webRTC.broadcastControl({ type: "start", ...config, startHostTime, sentHostTime: latestSentHostTime });
 }
 
@@ -277,6 +283,8 @@ function stopPlayback(): void {
   setPlaying(false);
   renderBeat();
   scheduler.stop();
+  void wakeLock.release();
+  audioNotice.hidden = true;
   webRTC.broadcastControl({ type: "stop", sentHostTime: latestSentHostTime });
 }
 
@@ -286,6 +294,25 @@ function togglePlayback(): void {
 }
 
 playButton.addEventListener("click", togglePlayback);
+
+// While the audio is stopped the scheduler keeps the beat grid without sending clicks, so the
+// clicks continue in place once it runs again. Starting playback resumes it as well.
+scheduler.onAudioStateChange((state) => {
+  audioInterrupted = state !== "running";
+  audioNotice.hidden = !(isPlaying && audioInterrupted);
+});
+
+function resumeInterruptedAudio(): void {
+  // A refused resume leaves the notice up for the next try.
+  if (audioInterrupted) void scheduler.resumeAudio().catch(() => {});
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") resumeInterruptedAudio();
+});
+// Browsers resume audio only from a user gesture, so any tap or key press tries again. A touch counts
+// as a gesture on pointerup, a mouse on pointerdown.
+for (const type of ["pointerdown", "pointerup", "keydown"]) document.addEventListener(type, resumeInterruptedAudio);
 
 // Space toggles playback unless focus is on a control that uses the key itself.
 document.addEventListener("keydown", (event) => {

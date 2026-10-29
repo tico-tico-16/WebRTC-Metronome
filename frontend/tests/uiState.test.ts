@@ -64,12 +64,16 @@ describe("labels", () => {
   });
 
   test("describes the participant sync state", () => {
-    const base = { joined: true, connectionLost: false, stable: true, isPlaying: false, audioEnabled: true };
+    const base = { joined: true, connectionLost: false, stable: true, isPlaying: false, audioEnabled: true, audioWasEnabled: true };
     expect(participantSyncLabel({ ...base, joined: false })).toEqual({ text: "待機中", tone: "neutral" });
     expect(participantSyncLabel({ ...base, connectionLost: true })).toEqual({ text: "待機中", tone: "neutral" });
     expect(participantSyncLabel({ ...base, stable: false })).toEqual({ text: "同期中…", tone: "neutral" });
-    expect(participantSyncLabel({ ...base, isPlaying: true, audioEnabled: false }))
+    expect(participantSyncLabel({ ...base, isPlaying: true, audioEnabled: false, audioWasEnabled: false }))
       .toEqual({ text: "音を有効にしてください", tone: "warn" });
+    // Audio enabled before and not running now was stopped by the browser (screen lock, a call).
+    expect(participantSyncLabel({ ...base, isPlaying: true, audioEnabled: false }))
+      .toEqual({ text: "音声が中断されました", tone: "warn" });
+    expect(participantSyncLabel({ ...base, audioEnabled: false })).toEqual({ text: "同期済み", tone: "ok" });
     expect(participantSyncLabel(base)).toEqual({ text: "同期済み", tone: "ok" });
     expect(participantSyncLabel({ ...base, isPlaying: true })).toEqual({ text: "再生中", tone: "ok" });
   });
