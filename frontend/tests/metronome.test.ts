@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { MetronomeConfig } from "../../shared/types.ts";
 import { HostMetronomeScheduler, beatAtHostTime as hostBeatAtTime, secondsPerBeat as hostBeatLength } from "../host/metronome.ts";
 import { MetronomeScheduler, beatAtHostTime as clientBeatAtTime, secondsPerBeat as clientBeatLength } from "../client/metronome.ts";
+import { ClickOutput } from "../shared/metronome/clickOutput.ts";
 import { FakeBrowser } from "./helpers/browser.ts";
 
 const config: MetronomeConfig = { bpm: 120, beatsPerBar: 4, beatUnit: 4 };
@@ -234,6 +235,32 @@ describe.serial("metronome public behavior", () => {
         expect(browser.vibrations).toEqual([]);
       });
 
+      test("reports audio interruptions and resumes the audio", async () => {
+        const { scheduler, start } = create(role);
+        const states: AudioContextState[] = [];
+        scheduler.onAudioStateChange((state) => states.push(state));
+        await start();
+        browser.contexts[0]!.state = "interrupted";
+        await scheduler.resumeAudio();
+        expect(states).toEqual(["running", "interrupted", "running"]);
+        expect(browser.contexts[0]!.resumeCount).toBe(2);
+      });
+
+      test("continues on the beat grid once suspended audio resumes, without a burst of held clicks", async () => {
+        const { scheduler, start } = create(role);
+        await start();
+        browser.timers.advanceTo(1100);
+        // The audio clock stops at 101.1 while the page clock runs on to 3.1.
+        browser.contexts[0]!.state = "suspended";
+        browser.timers.advanceTo(3100);
+        expectClickTimes([1]);
+        await scheduler.resumeAudio();
+        browser.timers.advanceTo(4100);
+        // The audio clock is now 2s behind, so beats 3.5 and 4 sound at 101.5 and 102; beats 1.5-3 were skipped.
+        expectClickTimes([1, 1.5, 2]);
+        expect(scheduler.beatAtHostTime(4)).toEqual({ beatIndex: 6, beatInBar: 3, secondsPerBeat: 0.5 });
+      });
+
       test("stop clears scheduling, vibration and beat lookup, then allows a new start", async () => {
         const { scheduler, start } = create(role);
         scheduler.setVibrationEnabled(true);
@@ -331,12 +358,17 @@ describe.serial("metronome public behavior", () => {
     expectClickTimes([]);
   });
 
-  test("host retains its context-based scheduling gate after audio is suspended", async () => {
+  test("host keeps its beat grid and vibration while audio is suspended but sends no clicks to the stopped clock", async () => {
     const host = new HostMetronomeScheduler();
+    host.setVibrationEnabled(true);
     await host.start(config, 1, 0);
     browser.contexts[0]!.state = "suspended";
-    browser.timers.advanceTo(900);
-    expectClickTimes([1]);
+    browser.timers.advanceTo(1600);
+    expectClickTimes([]);
+    expect(host.beatAtHostTime(1.5)).toEqual({ beatIndex: 1, beatInBar: 2, secondsPerBeat: 0.5 });
+    expect(browser.vibrations.map((event) => event.durationMs)).toEqual([60, 25]);
+    expect(browser.vibrations[0]!.atMs).toBeCloseTo(1000, 6);
+    expect(browser.vibrations[1]!.atMs).toBeCloseTo(1500, 6);
   });
 
   test("host strong-beat lookup supplies a late participant's start time", async () => {
@@ -358,6 +390,48 @@ describe.serial("metronome public behavior", () => {
     expect(host.nextStrongBeatHostTime(2.9)).toBe(3.5);
     host.stop();
     expect(host.nextStrongBeatHostTime(3)).toBeNull();
+  });
+
+  describe("click output", () => {
+    test("reports state changes and resumes a context the browser stopped", async () => {
+      const audio = new ClickOutput();
+      const states: AudioContextState[] = [];
+      audio.onStateChange((state) => states.push(state));
+      await audio.enable();
+      const context = browser.contexts[0]!;
+      expect(states).toEqual(["running"]);
+      context.state = "suspended";
+      expect(audio.isEnabled()).toBe(false);
+      await audio.resume();
+      expect(audio.isEnabled()).toBe(true);
+      // iOS reports calls and Siri as "interrupted".
+      context.state = "interrupted";
+      expect(audio.isEnabled()).toBe(false);
+      await audio.resume();
+      expect(audio.isEnabled()).toBe(true);
+      expect(states).toEqual(["running", "suspended", "running", "interrupted", "running"]);
+      expect(context.resumeCount).toBe(3);
+      expect(browser.contexts).toHaveLength(1);
+    });
+
+    test("resume leaves starting audio to enable", async () => {
+      const audio = new ClickOutput();
+      await audio.resume();
+      expect(browser.contexts).toHaveLength(0);
+      expect(audio.isEnabled()).toBe(false);
+    });
+
+    test("a refused resume keeps audio stopped until a later resume succeeds", async () => {
+      const audio = new ClickOutput();
+      await audio.enable();
+      browser.contexts[0]!.state = "suspended";
+      browser.resumeAudio = () => Promise.reject(new Error("not allowed"));
+      await expect(audio.resume()).rejects.toThrow("not allowed");
+      expect(audio.isEnabled()).toBe(false);
+      browser.resumeAudio = () => Promise.resolve();
+      await audio.resume();
+      expect(audio.isEnabled()).toBe(true);
+    });
   });
 
   test("standalone beat helpers retain pre-start and unmetered behavior", () => {
