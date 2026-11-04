@@ -8,9 +8,18 @@ import {
   formatBpm,
   meterText,
   participantSyncLabel,
+  planSongLine,
+  sectionLabel,
+  sectionOptionLabel,
+  sectionProgressLabel,
   signalingErrorLabel,
+  songPositionLabel,
+  songStartLabel,
+  songTotalsLabel,
 } from "../shared/ui/labels.ts";
 import { participantSummary, peerStatusLabel } from "../host/status.ts";
+import type { Song } from "../shared/song/model.ts";
+import { buildPlaybackPlan, type PlanPosition } from "../shared/song/plan.ts";
 
 describe("playback phase", () => {
   test("is stopped without a start time", () => {
@@ -130,5 +139,66 @@ describe("host participant status", () => {
     expect(participantSummary([peer("connecting")])).toEqual({ count: 0, tone: "warn" });
     expect(participantSummary([peer("connected"), peer("failed")])).toEqual({ count: 1, tone: "error" });
     expect(participantSummary([peer("connected", 2), peer("disconnected")])).toEqual({ count: 1, tone: "error" });
+  });
+});
+
+describe("song labels", () => {
+  const section = (name: string, bpm: number, beatsPerBar: number, bars: number) => ({ name, bpm, beatsPerBar, beatUnit: 4, bars });
+  /** 120 4/4 x8, unnamed 120 4/4 x16, 100 3/4 x8: 32 bars. */
+  const SONG: Song = { id: "s", title: "発表会の曲", sections: [section("イントロ", 120, 4, 8), section("", 120, 4, 16), section("サビ", 100, 3, 8)] };
+  const position = (kind: PlanPosition["kind"], sectionIndex: number, barInSegment: number, barInSong: number): PlanPosition => ({
+    kind, sectionIndex, name: SONG.sections[sectionIndex]!.name, barInSegment, barInSong, totalBars: 32,
+  });
+
+  test("a section without a name is shown by its number", () => {
+    expect(sectionLabel("Aメロ", 1)).toBe("Aメロ");
+    expect(sectionLabel("", 1)).toBe("セクション 2");
+  });
+
+  test("the position line names the count-in bar, or the section and the song's bar", () => {
+    expect(songPositionLabel(position("countIn", 0, 1, 0), 2)).toEqual({ caption: "カウントイン", position: "カウントイン　1 / 2 小節" });
+    expect(songPositionLabel(position("countIn", 0, 2, 0), 2)).toEqual({ caption: "カウントイン", position: "カウントイン　2 / 2 小節" });
+    expect(songPositionLabel(position("section", 0, 3, 3), 2)).toEqual({ caption: "再生中", position: "イントロ　小節 3 / 32" });
+    expect(songPositionLabel(position("section", 1, 2, 10), 0)).toEqual({ caption: "再生中", position: "セクション 2　小節 10 / 32" });
+  });
+
+  test("before the first beat the line shows where the song starts", () => {
+    expect(songStartLabel(position("section", 2, 1, 25))).toBe("サビ　小節 25 / 32");
+    expect(songStartLabel(position("section", 1, 1, 12))).toBe("セクション 2　小節 12 / 32");
+  });
+
+  test("the section card counts the bars of its own section, and of the count-in", () => {
+    expect(sectionProgressLabel(position("section", 0, 1, 1), SONG, 0)).toBe("再生中　1 / 8 小節");
+    // A start on the section's fourth bar counts from the section's first bar, not the start.
+    expect(sectionProgressLabel(position("section", 1, 1, 12), SONG, 1)).toBe("再生中　4 / 16 小節");
+    expect(sectionProgressLabel(position("section", 2, 8, 32), SONG, 1)).toBe("再生中　8 / 8 小節");
+    expect(sectionProgressLabel(position("countIn", 1, 2, 0), SONG, 2)).toBe("カウントイン　2 / 2 小節");
+  });
+
+  test("the summary shows the bar count and the length in minutes and seconds", () => {
+    expect(songTotalsLabel({ bars: 64, seconds: 117.7 })).toEqual({ bars: "全64小節", length: "約1分58秒" });
+    expect(songTotalsLabel({ bars: 8, seconds: 16 })).toEqual({ bars: "全8小節", length: "約16秒" });
+    expect(songTotalsLabel({ bars: 30, seconds: 59.6 })).toEqual({ bars: "全30小節", length: "約1分0秒" });
+    expect(songTotalsLabel({ bars: 1, seconds: 0.25 })).toEqual({ bars: "全1小節", length: "約0秒" });
+  });
+
+  test("the start options name each section and its bars in the song", () => {
+    expect(sectionOptionLabel(SONG.sections[0]!, 0, 1)).toBe("1. イントロ（1〜8小節）");
+    expect(sectionOptionLabel(SONG.sections[1]!, 1, 9)).toBe("2. セクション 2（9〜24小節）");
+    expect(sectionOptionLabel(section("終わり", 60, 4, 1), 3, 33)).toBe("4. 終わり（33小節）");
+  });
+
+  test("the beat display line follows a playing plan and shows its start before the first beat", () => {
+    const plan = buildPlaybackPlan(SONG, { startSectionIndex: 1, startBar: 4, countInBars: 1, startHostTime: 10 });
+    // Count-in 10..12, section 2 from its fourth bar 12..38, then the chorus.
+    const playing = { kind: "playing" } as const;
+    expect(planSongLine(plan, { kind: "countdown", seconds: 2 }, 8)).toEqual({ position: "セクション 2　小節 12 / 32" });
+    expect(planSongLine(plan, playing, 10.5)).toEqual({ caption: "カウントイン", position: "カウントイン　1 / 1 小節" });
+    expect(planSongLine(plan, playing, 12)).toEqual({ caption: "再生中", position: "セクション 2　小節 12 / 32" });
+    expect(planSongLine(plan, playing, plan.segments[2]!.fromHostTime)).toEqual({ caption: "再生中", position: "サビ　小節 25 / 32" });
+    // Playing but not yet at the first beat (the heard time trails a little): the start.
+    expect(planSongLine(plan, playing, 9.99)).toEqual({ position: "セクション 2　小節 12 / 32" });
+    // Once the end is heard the display is stopped and the line goes.
+    expect(planSongLine(plan, { kind: "stopped" }, plan.endHostTime)).toBeNull();
   });
 });

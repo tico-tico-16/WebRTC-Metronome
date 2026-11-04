@@ -29,34 +29,77 @@
           <p id="audioNotice" class="hint audio-notice" role="status" hidden>音声が中断されました。画面をタップすると再開します</p>
         </div>
         <div class="player-controls">
-          <div class="control-group">
-            <span class="control-label" id="bpmLabel">BPM</span>
-            <div class="stepper" role="group" aria-labelledby="bpmLabel">
-              <button class="secondary" type="button" data-bpm-step="-5" data-requires-room aria-label="BPMを5下げる">−5</button>
-              <button class="secondary" type="button" data-bpm-step="-1" data-requires-room aria-label="BPMを1下げる">−1</button>
-              <input id="bpmInput" type="number" min="30" max="240" step="any" value="120" inputmode="decimal" aria-labelledby="bpmLabel" data-requires-room />
-              <button class="secondary" type="button" data-bpm-step="1" data-requires-room aria-label="BPMを1上げる">+1</button>
-              <button class="secondary" type="button" data-bpm-step="5" data-requires-room aria-label="BPMを5上げる">+5</button>
+          <div class="tabs" role="tablist" aria-label="操作の切り替え">
+            <button id="metronomeTab" class="tab" type="button" role="tab" aria-selected="true" aria-controls="metronomePanel">メトロノーム</button>
+            <button id="songTab" class="tab" type="button" role="tab" aria-selected="false" aria-controls="songPanel" tabindex="-1">曲</button>
+          </div>
+          <div id="metronomePanel" class="tab-panel" role="tabpanel" aria-labelledby="metronomeTab">
+            <div class="control-group">
+              <span class="control-label" id="bpmLabel">BPM</span>
+              <div class="stepper" role="group" aria-labelledby="bpmLabel">
+                <button class="secondary" type="button" data-bpm-step="-5" data-requires-room aria-label="BPMを5下げる">−5</button>
+                <button class="secondary" type="button" data-bpm-step="-1" data-requires-room aria-label="BPMを1下げる">−1</button>
+                <input id="bpmInput" type="number" min="30" max="240" step="any" value="120" inputmode="decimal" aria-labelledby="bpmLabel" data-requires-room />
+                <button class="secondary" type="button" data-bpm-step="1" data-requires-room aria-label="BPMを1上げる">+1</button>
+                <button class="secondary" type="button" data-bpm-step="5" data-requires-room aria-label="BPMを5上げる">+5</button>
+              </div>
+              <div class="slider-row">
+                <input id="bpmRange" type="range" min="30" max="240" step="1" value="120" aria-label="BPM" data-requires-room />
+                <button id="tapButton" class="secondary" type="button" data-requires-room>タップ</button>
+              </div>
             </div>
-            <div class="slider-row">
-              <input id="bpmRange" type="range" min="30" max="240" step="1" value="120" aria-label="BPM" data-requires-room />
-              <button id="tapButton" class="secondary" type="button" data-requires-room>タップ</button>
+            <div class="control-group">
+              <span class="control-label" id="meterLabel">拍子</span>
+              <div class="meter-presets" role="group" aria-labelledby="meterLabel" id="meterPresets"></div>
+              <div class="meter-inputs">
+                <input id="beatInput" type="number" min="0" max="16" step="1" value="4" aria-label="拍子の分子（0は強拍なし）" data-requires-room />
+                <span aria-hidden="true">/</span>
+                <select id="beatUnitInput" aria-label="拍子の分母" data-requires-room>
+                  <option value="2">2</option>
+                  <option value="4" selected>4</option>
+                  <option value="8">8</option>
+                  <option value="16">16</option>
+                </select>
+              </div>
+              <p class="hint">BPM は分母の音符の数。分子 0 は強拍なし</p>
             </div>
           </div>
-          <div class="control-group">
-            <span class="control-label" id="meterLabel">拍子</span>
-            <div class="meter-presets" role="group" aria-labelledby="meterLabel" id="meterPresets"></div>
-            <div class="meter-inputs">
-              <input id="beatInput" type="number" min="0" max="16" step="1" value="4" aria-label="拍子の分子（0は強拍なし）" data-requires-room />
-              <span aria-hidden="true">/</span>
-              <select id="beatUnitInput" aria-label="拍子の分母" data-requires-room>
-                <option value="2">2</option>
-                <option value="4" selected>4</option>
-                <option value="8">8</option>
-                <option value="16">16</option>
-              </select>
+          <div id="songPanel" class="tab-panel" role="tabpanel" aria-labelledby="songTab" hidden>
+            <div class="control-group">
+              <span class="control-label" id="songPickerLabel">曲</span>
+              <div class="song-picker" role="group" aria-labelledby="songPickerLabel">
+                <select id="songSelect" aria-label="保存した曲"></select>
+                <button id="newSongButton" class="secondary compact" type="button">新規</button>
+                <button id="deleteSongButton" class="secondary compact" type="button">削除</button>
+              </div>
+              <input id="songTitleInput" type="text" aria-label="曲名" placeholder="曲名（未入力なら自動で付けます）" autocomplete="off" />
+              <p class="hint">編集はこの端末に自動保存され、選んだ曲は次回も開きます。</p>
             </div>
-            <p class="hint">BPM は分母の音符の数。分子 0 は強拍なし</p>
+            <div class="control-group">
+              <span class="control-label" id="songSectionsLabel">曲の構成</span>
+              <p id="songPlayingHint" class="hint" hidden>再生中は構成と開始位置を変更できません。停止すると編集できます。</p>
+              <ol id="songSections" class="song-sections" aria-labelledby="songSectionsLabel"></ol>
+              <button id="addSectionButton" class="secondary" type="button">＋ セクションを追加</button>
+              <p class="song-summary"><span id="songTotalBars"></span><span id="songTotalLength"></span></p>
+              <p class="hint">BPM は分母の音符の数。6/8 で付点四分音符 = 60 なら 180 と入力します。</p>
+            </div>
+            <div class="control-group">
+              <span class="control-label" id="songStartLabel">開始位置</span>
+              <div class="start-controls" role="group" aria-labelledby="songStartLabel">
+                <select id="startSectionSelect" aria-label="開始するセクション"></select>
+                <input id="startBarInput" type="number" min="1" step="1" value="1" inputmode="numeric" aria-label="セクション内の小節" />
+              </div>
+              <p class="hint">選んだセクションの指定した小節から始めます。</p>
+            </div>
+            <div class="control-group">
+              <span class="control-label" id="countInLabel">カウントイン</span>
+              <select id="countInSelect" aria-labelledby="countInLabel">
+                <option value="0">なし</option>
+                <option value="1" selected>1小節</option>
+                <option value="2">2小節</option>
+              </select>
+              <p class="hint">開始位置のテンポと拍子で数えます。</p>
+            </div>
           </div>
           <label class="toggle">
             <input id="vibrationToggle" type="checkbox" />

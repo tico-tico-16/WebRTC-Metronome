@@ -339,3 +339,24 @@ export class FakeRtc {
     this.installed = false;
   }
 }
+
+/** A Web Storage stand-in. Set failGet or failSet to throw as blocked or full storage does. */
+export class FakeStorage {
+  readonly items = new Map<string, string>();
+  failGet = false;
+  failSet = false;
+
+  getItem(key: string): string | null {
+    if (this.failGet) throw new DOMException("The operation is insecure.", "SecurityError");
+    return this.items.get(key) ?? null;
+  }
+
+  setItem(key: string, value: string): void {
+    if (this.failSet) throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
+    this.items.set(key, String(value));
+  }
+
+  removeItem(key: string): void {
+    this.items.delete(key);
+  }
+}
