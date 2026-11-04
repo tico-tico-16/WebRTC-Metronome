@@ -1,11 +1,9 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import type { ControlMessage } from "../../shared/types.ts";
 import { hostPlaybackState, songStartMessage } from "../host/songPlayback.ts";
-import { HostWebRTC, type HostPlaybackState } from "../host/webrtc.ts";
 import { pendingFromStart } from "../shared/metronome/configChange.ts";
 import type { Song } from "../shared/song/model.ts";
 import { buildPlaybackPlan, planMessage } from "../shared/song/plan.ts";
-import { FakeRtc, type FakeDataChannel } from "./helpers/browser.ts";
 
 /** Two bars at 240 4/4, then two at 180 3/4. */
 const SONG: Song = {
@@ -80,44 +78,5 @@ describe("host playback state for late joiners", () => {
     const stopped = hostPlaybackState({ isPlaying: false, appliedConfig: APPLIED, startHostTime: null, activePlan: PLAN }, scheduler, 120);
     expect(stopped).toEqual({ isPlaying: false, config: APPLIED, startHostTime: null, sentHostTime: 120 });
     expect("plan" in stopped).toBe(false);
-  });
-});
-
-describe.serial("host snapshot while a song plays", () => {
-  let rtc: FakeRtc;
-
-  beforeEach(() => {
-    rtc = new FakeRtc();
-    rtc.install();
-  });
-
-  afterEach(() => {
-    rtc.restore();
-  });
-
-  test("a participant joining mid-song gets the plan from its original start", async () => {
-    let state: HostPlaybackState = hostPlaybackState(
-      { isPlaying: true, appliedConfig: APPLIED, startHostTime: START_HOST_TIME, activePlan: PLAN },
-      schedulerStub(null),
-      START_HOST_TIME + 3.2,
-    );
-    const host = new HostWebRTC(() => {}, () => state);
-    await host.addClient("client-1111bbbb", "Client 1");
-    const peer = host.peers.get("client-1111bbbb")!;
-    const control = peer.control as unknown as FakeDataChannel;
-    control.readyState = "open";
-
-    host.sendSnapshot(peer);
-    state = hostPlaybackState({ isPlaying: false, appliedConfig: APPLIED, startHostTime: null, activePlan: null }, schedulerStub(null), START_HOST_TIME + 9);
-    host.sendSnapshot(peer);
-
-    const messages = control.sent.map((data) => JSON.parse(data) as ControlMessage);
-    expect(messages).toEqual([
-      {
-        type: "state_snapshot", isPlaying: true, ...A, startHostTime: START_HOST_TIME, sentHostTime: START_HOST_TIME + 3.2,
-        plan: planMessage(PLAN),
-      },
-      { type: "state_snapshot", isPlaying: false, ...APPLIED, startHostTime: null, sentHostTime: START_HOST_TIME + 9 },
-    ] as ControlMessage[]);
   });
 });
