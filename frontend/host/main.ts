@@ -330,8 +330,9 @@ function renderBeat(): void {
 }
 
 function animateBeat(): void {
-  // A song ends on its own once its end is heard; stopping also tells the participants.
-  if (activePlan !== null && nowSeconds() >= scheduler.heardHostTimeFor(activePlan.endHostTime)) stopPlayback();
+  // A song ends on its own once its end is heard. No stop is sent: a participant with a larger output
+  // offset hears its end later and would lose its last clicks, so each participant stops at its own end.
+  if (activePlan !== null && nowSeconds() >= scheduler.heardHostTimeFor(activePlan.endHostTime)) endPlayback();
   else renderBeat();
   beatFrame = isPlaying ? requestAnimationFrame(animateBeat) : null;
 }
@@ -359,7 +360,8 @@ function startPlayback(): void {
   void wakeLock.acquire();
 }
 
-function stopPlayback(): void {
+/** Stops this device; late joiners then get a stopped snapshot. */
+function endPlayback(): void {
   latestSentHostTime = nowSeconds();
   startHostTime = null;
   activePlan = null;
@@ -368,6 +370,11 @@ function stopPlayback(): void {
   scheduler.stop();
   void wakeLock.release();
   audioNotice.hidden = true;
+}
+
+/** The host's manual stop: stops here and on every participant at once. */
+function stopPlayback(): void {
+  endPlayback();
   webRTC.broadcastControl({ type: "stop", sentHostTime: latestSentHostTime });
 }
 
