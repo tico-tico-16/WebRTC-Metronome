@@ -27,6 +27,16 @@ describe("playback phase", () => {
     expect(playbackPhase(12, 12)).toEqual({ kind: "playing" });
     expect(playbackPhase(30, 12)).toEqual({ kind: "playing" });
   });
+
+  test("is stopped from the end time of a song on", () => {
+    expect(playbackPhase(10, 12, 40)).toEqual({ kind: "countdown", seconds: 2 });
+    expect(playbackPhase(39.9, 12, 40)).toEqual({ kind: "playing" });
+    expect(playbackPhase(40, 12, 40)).toEqual({ kind: "stopped" });
+    expect(playbackPhase(55, 12, 40)).toEqual({ kind: "stopped" });
+    // Without an end it plays until stopped.
+    expect(playbackPhase(55, 12, null)).toEqual({ kind: "playing" });
+    expect(playbackPhase(55, null, 40)).toEqual({ kind: "stopped" });
+  });
 });
 
 describe("clock stability", () => {

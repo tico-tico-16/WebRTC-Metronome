@@ -53,6 +53,10 @@ export class MetronomeScheduler {
     this.engine.updateConfig(config, anchor);
   }
 
+  endHostTime(): number | null {
+    return this.engine.endHostTime();
+  }
+
   configHeardAt(hostTime: number): MetronomeConfig | null {
     return this.engine.configHeardAt(hostTime);
   }

@@ -71,6 +71,22 @@ describe.serial("metronome public behavior", () => {
         expect(scheduler.heardHostTimeFor(1)).toBeCloseTo(1.03, 8);
       });
 
+      test("plays until the planned end time and reports it", async () => {
+        const { scheduler } = create(role);
+        if (scheduler instanceof HostMetronomeScheduler) {
+          await scheduler.start(config, 1, 0, { endHostTime: 2.5 });
+        } else {
+          await scheduler.enableAudio();
+          scheduler.start(config, 1, 0, (time) => time, { endHostTime: 2.5 });
+        }
+        expect(scheduler.endHostTime()).toBe(2.5);
+        browser.timers.advanceTo(4000);
+        expectClickTimes([1, 1.5, 2]);
+        expect(browser.timers.intervalCount).toBe(0);
+        scheduler.stop();
+        expect(scheduler.endHostTime()).toBeNull();
+      });
+
       test("starts on the next beat when joining late", async () => {
         browser.timers.nowMs = 1600;
         const { scheduler, start } = create(role);

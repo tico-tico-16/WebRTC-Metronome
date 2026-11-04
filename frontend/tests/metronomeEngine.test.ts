@@ -10,6 +10,8 @@ import {
   withConfigChange,
 } from "../shared/metronome/configChange.ts";
 import { MetronomeEngine } from "../shared/metronome/engine.ts";
+import type { Song } from "../shared/song/model.ts";
+import { buildPlaybackPlan, type PlaybackPlan } from "../shared/song/plan.ts";
 import { ManualTimers } from "./helpers/browser.ts";
 
 // No browser globals are installed: the engine runs entirely on supplied dependencies.
@@ -632,4 +634,164 @@ test("beatPositionAt counts the bar from the beat a grid starts on", () => {
   expect(beatPositionAt(3.75, 3.5, config, 2)).toEqual({ beatIndex: 0, beatInBar: 2, secondsPerBeat: 1, progress: 0.25 });
   expect(beatPositionAt(6.5, 3.5, config, 2).beatInBar).toBe(1);
   expect(beatPositionAt(6.5, 3.5, { ...config, beatsPerBar: 0 }, 0).beatInBar).toBe(0);
+});
+
+test("engine reserves no beat at or after the end time, then stops its timer", () => {
+  const host = device();
+  host.engine.start(FOUR_FOUR, 1, host.hostNow(), { endHostTime: 5 });
+  expect(host.engine.endHostTime()).toBe(5);
+  host.timers.advanceTo(4300);
+  expect(host.timers.intervalCount).toBe(1);
+  // 4.5 is reserved at 4.325s and the next beat is the end, so there is nothing more to schedule.
+  host.timers.advanceTo(4400);
+  expect(host.timers.intervalCount).toBe(0);
+  host.timers.advanceTo(8000);
+  expect(heard(host.clicks)).toEqual([
+    [1, true], [1.5, false], [2, false], [2.5, false], [3, true], [3.5, false], [4, false], [4.5, false],
+  ]);
+  // The reserved beats are kept, so the display can finish the last one.
+  expect(host.engine.beatPositionHeardAt(4.75)).toEqual({ beatIndex: 7, beatInBar: 4, secondsPerBeat: 0.5, progress: 0.5 });
+  expect(host.engine.beatPositionHeardAt(6)!.progress).toBe(1);
+  host.engine.stop();
+  expect(host.engine.endHostTime()).toBeNull();
+});
+
+test("engine reserves the last beat before the end, and a beat within the epsilon of the end counts as at it", () => {
+  for (const [endHostTime, lastBeat] of [[4.6, 4.5], [5 + 1e-7, 4.5], [5 - 1e-7, 4.5], [5.0001, 5]] as const) {
+    const host = device();
+    host.engine.start(FOUR_FOUR, 1, host.hostNow(), { endHostTime });
+    host.timers.advanceTo(8000);
+    expect(heard(host.clicks).at(-1)![0]).toBe(lastBeat);
+    expect(host.timers.intervalCount).toBe(0);
+  }
+});
+
+test("engine started at or after the end time reserves nothing", () => {
+  const host = device();
+  host.timers.advanceTo(5000);
+  host.engine.start(FOUR_FOUR, 1, host.hostNow(), { endHostTime: 5 });
+  host.timers.advanceTo(8000);
+  expect(host.clicks).toEqual([]);
+  expect(host.timers.intervalCount).toBe(0);
+});
+
+test("engine finds no strong beat or anchor at or after the end time", () => {
+  const host = device();
+  host.engine.start(FOUR_FOUR, 1, host.hostNow(), { endHostTime: 5 });
+  host.timers.advanceTo(1100);
+  expect(host.engine.nextStrongBeatHostTime(1.1)).toBe(3);
+  // The next downbeat would be 5, the end.
+  expect(host.engine.nextStrongBeatHostTime(3.1)).toBeNull();
+  expect(host.engine.nextStrongBeatHostTime(5)).toBeNull();
+  expect(host.engine.nextStrongBeatHostTime(9)).toBeNull();
+  expect(host.engine.anchorForConfigChange(FOUR_FOUR, 4.1)).toEqual({ applyAtHostTime: 4.5, beatInBarAtApply: 4 });
+  expect(host.engine.anchorForConfigChange(FOUR_FOUR, 4.6)).toBeNull();
+  expect(host.engine.anchorForConfigChange({ ...FOUR_FOUR, beatsPerBar: 3 }, 3.1)).toBeNull();
+
+  // Without an end, playback goes on until stopped, as before.
+  const open = device();
+  open.engine.start(FOUR_FOUR, 1, open.hostNow());
+  expect(open.engine.endHostTime()).toBeNull();
+  expect(open.engine.nextStrongBeatHostTime(3.1)).toBe(5);
+});
+
+/** Every beat of a plan as [host time, accented], in the form heard() gives. */
+function planBeats(plan: PlaybackPlan): [number, boolean][] {
+  return plan.segments.flatMap((segment) => {
+    const beatLength = 60 / segment.config.bpm;
+    return Array.from({ length: segment.bars * segment.config.beatsPerBar }, (_, beat): [number, boolean] => [
+      Math.round((segment.fromHostTime + beat * beatLength) * 1e6) / 1e6,
+      beat % segment.config.beatsPerBar === 0,
+    ]);
+  });
+}
+
+/** Starts a device on a plan at its current time, as a participant does once it can play. */
+function startOnPlan(target: ReturnType<typeof device>, plan: PlaybackPlan): void {
+  const hostNow = target.hostNow();
+  const pending = { config: plan.config, startHostTime: plan.startHostTime, startBeatInBar: 1, changes: plan.changes };
+  const playback = pendingPlaybackAt(pending, hostNow);
+  target.engine.start(playback.config, playback.startHostTime, hostNow, {
+    startBeatInBar: playback.startBeatInBar,
+    changes: playback.changes,
+    endHostTime: plan.endHostTime,
+  });
+}
+
+/** 120 4/4 x2, 132 4/4 x2, 100 3/4 x2. */
+const SHORT_SONG: Song = {
+  id: "song",
+  title: "",
+  sections: [
+    { name: "A", bpm: 120, beatsPerBar: 4, beatUnit: 4, bars: 2 },
+    { name: "B", bpm: 132, beatsPerBar: 4, beatUnit: 4, bars: 2 },
+    { name: "C", bpm: 100, beatsPerBar: 3, beatUnit: 4, bars: 2 },
+  ],
+};
+
+test("host and participants play a song plan on the same clicks and end together", () => {
+  const plan = buildPlaybackPlan(SHORT_SONG, { startSectionIndex: 0, startBar: 1, countInBars: 1, startHostTime: 1 });
+  const host = device();
+  host.engine.start(plan.config, plan.startHostTime, host.hostNow(), { changes: plan.changes, endHostTime: plan.endHostTime });
+  const participant = participantDevice({ outputLatency: 0.03 });
+  startOnPlan(participant, plan);
+  // Joins during section B (7s to about 10.64s), on its own timer phase.
+  const late = participantDevice();
+  late.timers.advanceTo(7410);
+  startOnPlan(late, plan);
+  for (const target of [host, participant, late]) target.timers.advanceTo(20000);
+
+  // One count-in bar, then each bar starts accented with its section's settings.
+  const expected = planBeats(plan);
+  expect(expected).toHaveLength(4 + 8 + 8 + 6);
+  expect(heard(host.clicks)).toEqual(expected);
+  expect(heard(participant.clicks)).toEqual(expected);
+  expect(heard(late.clicks)).toEqual(expected.filter(([time]) => time >= 7.41));
+  for (const target of [host, participant, late]) {
+    expect(target.engine.endHostTime()).toBe(plan.endHostTime);
+    expect(target.timers.intervalCount).toBe(0);
+    expect(target.engine.nextStrongBeatHostTime(plan.endHostTime)).toBeNull();
+  }
+  expect(heard(host.clicks).at(-1)![0]).toBeCloseTo(plan.endHostTime - 0.6, 6);
+});
+
+// Host times are epoch seconds (about 1.8e9), where adding a beat length that is not a binary
+// fraction (0.6s at 100 BPM) rounds every time. Beat times added up one by one drift off the
+// plan's boundaries by more than the time epsilon within a few dozen beats.
+test("a long song plan stays on its grid at epoch-scale host times, for a late joiner too", () => {
+  const song: Song = {
+    id: "song",
+    title: "",
+    sections: [
+      { name: "A", bpm: 100, beatsPerBar: 3, beatUnit: 4, bars: 40 },
+      { name: "B", bpm: 132, beatsPerBar: 4, beatUnit: 4, bars: 8 },
+      { name: "C", bpm: 100, beatsPerBar: 3, beatUnit: 4, bars: 8 },
+    ],
+  };
+  const startHostTime = 1_793_000_000.25;
+  const plan = buildPlaybackPlan(song, { startSectionIndex: 0, startBar: 1, countInBars: 0, startHostTime });
+  const beforeStartMs = (startHostTime - 1) * 1000;
+  const host = device({ timerPhaseMs: beforeStartMs });
+  host.engine.start(plan.config, plan.startHostTime, host.hostNow(), { changes: plan.changes, endHostTime: plan.endHostTime });
+  const participant = device({ localOffset: -1000, timerPhaseMs: beforeStartMs + 7 });
+  startOnPlan(participant, plan);
+  // Joins 100 beats into section A.
+  const late = device({ localOffset: -1000, timerPhaseMs: beforeStartMs + 1000 + 60_210 });
+  startOnPlan(late, plan);
+  const endMs = (plan.endHostTime + 1) * 1000;
+  for (const target of [host, participant, late]) target.timers.advanceTo(endMs);
+
+  const expected = planBeats(plan);
+  expect(expected).toHaveLength(120 + 32 + 24);
+  const expectOnGrid = (clicks: Click[], beats: [number, boolean][]) => {
+    expect(clicks).toHaveLength(beats.length);
+    clicks.forEach((click, index) => {
+      expect(Math.abs(click.hostTime - beats[index]![0])).toBeLessThan(2e-6);
+      expect(click.accented).toBe(beats[index]![1]);
+    });
+  };
+  expectOnGrid(host.clicks, expected);
+  expectOnGrid(participant.clicks, expected);
+  expectOnGrid(late.clicks, expected.filter(([time]) => time >= startHostTime + 60.21));
+  for (const target of [host, participant, late]) expect(target.timers.intervalCount).toBe(0);
 });

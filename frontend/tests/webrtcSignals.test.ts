@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test, type Mock } from "bun:test";
-import type { SignalMessage } from "../../shared/types.ts";
+import type { ControlMessage, PlaybackPlanMessage, SignalMessage } from "../../shared/types.ts";
 import { ClientWebRTC } from "../client/webrtc.ts";
 import { HostWebRTC } from "../host/webrtc.ts";
 import { isHostPeerId } from "../shared/peerSignals.ts";
-import { FakeRtc } from "./helpers/browser.ts";
+import { buildPlaybackPlan, planMessage } from "../shared/song/plan.ts";
+import { FakeRtc, type FakeDataChannel } from "./helpers/browser.ts";
 
 const HOST_ID = "host-0000aaaa";
 const CLIENT_ID = "client-1111bbbb";
@@ -48,6 +49,32 @@ describe.serial("WebRTC signal handling", () => {
     }
 
     const answer: SignalMessage = { type: "answer", to: HOST_ID, from: CLIENT_ID, sdp: { type: "answer", sdp: "answer-sdp" } };
+
+    test("sends the song plan in the snapshot only while one is playing", async () => {
+      const config = { bpm: 132, beatsPerBar: 4, beatUnit: 4 };
+      const song = { id: "s", title: "", sections: [{ name: "A", ...config, bars: 4 }] };
+      const songPlan = planMessage(buildPlaybackPlan(song, { startSectionIndex: 0, startBar: 1, countInBars: 1, startHostTime: 10 }));
+      let plan: PlaybackPlanMessage | undefined = songPlan;
+      const host = new HostWebRTC((message) => sent.push(message), () => ({
+        isPlaying: true,
+        config,
+        startHostTime: 10,
+        sentHostTime: 12,
+        ...(plan ? { plan } : {}),
+      }));
+      await host.addClient(CLIENT_ID, "Client 1");
+      const peer = host.peers.get(CLIENT_ID)!;
+      const control = peer.control as unknown as FakeDataChannel;
+      control.readyState = "open";
+
+      host.sendSnapshot(peer);
+      plan = undefined;
+      host.sendSnapshot(peer);
+      const snapshot = { type: "state_snapshot", isPlaying: true, ...config, startHostTime: 10, sentHostTime: 12 };
+      const messages = control.sent.map((data) => JSON.parse(data) as ControlMessage);
+      expect(messages).toEqual([{ ...snapshot, plan: songPlan }, snapshot] as ControlMessage[]);
+      expect("plan" in messages[1]!).toBe(false);
+    });
 
     test("adds candidates that arrive before the answer is applied, in order, then later ones at once", async () => {
       const { host, pc } = await createHost();
