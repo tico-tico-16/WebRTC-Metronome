@@ -1,6 +1,6 @@
-import type { BeatInfo, BeatPosition, MetronomeConfig } from "../../shared/types.ts";
+import type { BeatInfo, BeatPosition, ConfigChangeAnchor, MetronomeConfig } from "../../shared/types.ts";
 import { nowSeconds } from "./clockSync.ts";
-import { MetronomeEngine } from "../shared/metronome/engine.ts";
+import { MetronomeEngine, type StartOptions } from "../shared/metronome/engine.ts";
 import { ClickOutput } from "../shared/metronome/clickOutput.ts";
 import { VibrationOutput } from "../shared/metronome/vibrationOutput.ts";
 
@@ -24,17 +24,38 @@ export class HostMetronomeScheduler {
     return this.audio.enable();
   }
 
-  async start(config: MetronomeConfig, startHostTime: number, hostNow: number): Promise<void> {
+  /** Resumes audio the browser stopped after it was enabled; mobile browsers usually need a user gesture. */
+  resumeAudio(): Promise<void> {
+    return this.audio.resume();
+  }
+
+  onAudioStateChange(listener: (state: AudioContextState) => void): void {
+    this.audio.onStateChange(listener);
+  }
+
+  async start(config: MetronomeConfig, startHostTime: number, hostNow: number, options: StartOptions = {}): Promise<void> {
     await this.enableAudio();
-    this.engine.start(config, startHostTime, hostNow);
+    this.engine.start(config, startHostTime, hostNow, options);
+  }
+
+  endHostTime(): number | null {
+    return this.engine.endHostTime();
   }
 
   nextStrongBeatHostTime(atHostTime: number): number | null {
     return this.engine.nextStrongBeatHostTime(atHostTime);
   }
 
-  updateConfig(config: MetronomeConfig): void {
-    this.engine.updateConfig(config);
+  anchorForConfigChange(config: MetronomeConfig, notBeforeHostTime: number): ConfigChangeAnchor | null {
+    return this.engine.anchorForConfigChange(config, notBeforeHostTime);
+  }
+
+  updateConfig(config: MetronomeConfig, anchor?: ConfigChangeAnchor): void {
+    this.engine.updateConfig(config, anchor);
+  }
+
+  configHeardAt(hostTime: number): MetronomeConfig | null {
+    return this.engine.configHeardAt(hostTime);
   }
 
   setOutputOffsetMs(offsetMs: number): void {

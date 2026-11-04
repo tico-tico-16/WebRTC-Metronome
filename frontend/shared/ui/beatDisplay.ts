@@ -1,12 +1,14 @@
 import type { BeatPosition, MetronomeConfig } from "../../../shared/types.ts";
 import { beatShape, beatVertices, dotPosition } from "./beatPolygon.ts";
-import { beatDisplayLabel, formatBpm, meterText } from "./labels.ts";
+import { beatDisplayLabel, formatBpm, meterText, type SongLine } from "./labels.ts";
 import type { PlaybackPhase } from "./playback.ts";
 
+/** With song, a line under the meter shows the section and bar; without it the display is as before. */
 export type BeatDisplayState = {
   phase: PlaybackPhase;
   beat: BeatPosition | null;
   config: MetronomeConfig;
+  song?: SongLine | null;
 };
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -33,6 +35,7 @@ export class BeatDisplay {
   private readonly centerUnit = svgElement("text", "beat-center-unit");
   private readonly dot = svgElement("circle", "beat-dot");
   private readonly meta = document.createElement("p");
+  private readonly songLine = document.createElement("p");
   private readonly reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   private shape: SVGElement | null = null;
   private vertices: SVGCircleElement[] = [];
@@ -42,6 +45,8 @@ export class BeatDisplay {
   constructor(private readonly root: HTMLElement) {
     this.caption.className = "beat-display-caption";
     this.meta.className = "beat-display-meta";
+    this.songLine.className = "beat-display-section";
+    this.songLine.hidden = true;
     this.svg.setAttribute("viewBox", "-124 -124 248 248");
     this.svg.setAttribute("role", "img");
     this.centerValue.setAttribute("y", "6");
@@ -49,24 +54,36 @@ export class BeatDisplay {
     this.dot.setAttribute("r", "11");
     this.svg.append(this.shapeLayer, this.vertexLayer, this.centerValue, this.centerUnit, this.dot);
     root.classList.add("beat-display");
-    root.replaceChildren(this.caption, this.svg, this.meta);
+    root.replaceChildren(this.caption, this.svg, this.meta, this.songLine);
   }
 
-  update({ phase, beat, config }: BeatDisplayState): void {
+  update({ phase, beat, config, song = null }: BeatDisplayState): void {
     const beatsPerBar = config.beatsPerBar;
     if (beatsPerBar !== this.drawnBeatsPerBar) this.drawShape(beatsPerBar);
 
     this.root.dataset.phase = phase.kind;
-    setText(this.caption, phase.kind === "countdown" ? "開始まで" : phase.kind === "playing" ? "再生中" : "停止中");
+    const playingCaption = song?.caption ?? "再生中";
+    setText(this.caption, phase.kind === "countdown" ? "開始まで" : phase.kind === "playing" ? playingCaption : "停止中");
     setText(this.centerValue, phase.kind === "countdown" ? String(phase.seconds) : formatBpm(config.bpm));
     setText(this.centerUnit, phase.kind === "countdown" ? "" : "BPM");
     setText(this.meta, meterText(config));
+    this.showSongLine(song);
     const playingBeat = phase.kind === "playing" ? beat : null;
     const label = beatDisplayLabel(phase, playingBeat, config);
     if (this.svg.getAttribute("aria-label") !== label) this.svg.setAttribute("aria-label", label);
 
     this.placeDot(phase, playingBeat, beatsPerBar);
     this.highlight(playingBeat, beatsPerBar);
+  }
+
+  private showSongLine(song: SongLine | null): void {
+    const shown = song !== null;
+    if (this.songLine.hidden === shown) {
+      this.songLine.hidden = !shown;
+      // On wide screens the shape gives up the line's height, so the play button below stays put.
+      this.root.classList.toggle("has-song-line", shown);
+    }
+    if (song) setText(this.songLine, song.position);
   }
 
   private drawShape(beatsPerBar: number): void {

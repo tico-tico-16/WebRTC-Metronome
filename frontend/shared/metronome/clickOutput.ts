@@ -6,11 +6,26 @@ const DURATION_SECONDS = 0.08;
 export class ClickOutput {
   private context: AudioContext | null = null;
   private audioEnabled = false;
+  private readonly stateListeners: ((state: AudioContextState) => void)[] = [];
 
   async enable(): Promise<void> {
-    this.context ??= new AudioContext();
+    this.context ??= this.createContext();
     await this.context.resume();
     this.audioEnabled = true;
+  }
+
+  /**
+   * Resumes audio the browser stopped after it was enabled (screen lock, a call, another app).
+   * Mobile browsers usually need a user gesture for this. Before enable() succeeds it does nothing.
+   */
+  async resume(): Promise<void> {
+    if (!this.context || !this.audioEnabled) return;
+    await this.context.resume();
+  }
+
+  /** Listeners also hear the changes made by enable() and resume(). */
+  onStateChange(listener: (state: AudioContextState) => void): void {
+    this.stateListeners.push(listener);
   }
 
   hasContext(): boolean {
@@ -30,8 +45,12 @@ export class ClickOutput {
     return this.context?.outputLatency ?? this.context?.baseLatency ?? 0;
   }
 
+  /**
+   * A context that is not running has a stopped clock, so a click scheduled on it would sound
+   * when it resumes, together with every other click scheduled meanwhile. Such clicks are dropped.
+   */
   click(time: number, accented: boolean): void {
-    if (!this.context) return;
+    if (this.context?.state !== "running") return;
     const oscillator = this.context.createOscillator();
     const gain = this.context.createGain();
     oscillator.type = "sine";
@@ -42,5 +61,13 @@ export class ClickOutput {
     oscillator.connect(gain).connect(this.context.destination);
     oscillator.start(time);
     oscillator.stop(time + DURATION_SECONDS);
+  }
+
+  private createContext(): AudioContext {
+    const context = new AudioContext();
+    context.addEventListener("statechange", () => {
+      for (const listener of this.stateListeners) listener(context.state);
+    });
+    return context;
   }
 }

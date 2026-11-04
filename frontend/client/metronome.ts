@@ -1,6 +1,6 @@
-import type { BeatInfo, BeatPosition, MetronomeConfig } from "../../shared/types.ts";
+import type { BeatInfo, BeatPosition, ConfigChangeAnchor, MetronomeConfig } from "../../shared/types.ts";
 import { nowSeconds } from "./clockSync.ts";
-import { MetronomeEngine } from "../shared/metronome/engine.ts";
+import { MetronomeEngine, type StartOptions } from "../shared/metronome/engine.ts";
 import { ClickOutput } from "../shared/metronome/clickOutput.ts";
 import { VibrationOutput } from "../shared/metronome/vibrationOutput.ts";
 
@@ -29,13 +29,36 @@ export class MetronomeScheduler {
     return this.audio.isEnabled();
   }
 
-  start(config: MetronomeConfig, startHostTime: number, hostNow: number, hostToLocalTime: (hostTime: number) => number): void {
-    this.hostToLocalTime = hostToLocalTime;
-    this.engine.start(config, startHostTime, hostNow);
+  /** Resumes audio the browser stopped after it was enabled; mobile browsers usually need a user gesture. */
+  resumeAudio(): Promise<void> {
+    return this.audio.resume();
   }
 
-  updateConfig(config: MetronomeConfig): void {
-    this.engine.updateConfig(config);
+  onAudioStateChange(listener: (state: AudioContextState) => void): void {
+    this.audio.onStateChange(listener);
+  }
+
+  start(
+    config: MetronomeConfig,
+    startHostTime: number,
+    hostNow: number,
+    hostToLocalTime: (hostTime: number) => number,
+    options: StartOptions = {},
+  ): void {
+    this.hostToLocalTime = hostToLocalTime;
+    this.engine.start(config, startHostTime, hostNow, options);
+  }
+
+  updateConfig(config: MetronomeConfig, anchor?: ConfigChangeAnchor): void {
+    this.engine.updateConfig(config, anchor);
+  }
+
+  endHostTime(): number | null {
+    return this.engine.endHostTime();
+  }
+
+  configHeardAt(hostTime: number): MetronomeConfig | null {
+    return this.engine.configHeardAt(hostTime);
   }
 
   setOutputOffsetMs(offsetMs: number): void {

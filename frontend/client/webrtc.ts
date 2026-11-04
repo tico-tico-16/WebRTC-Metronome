@@ -1,4 +1,5 @@
 import type { ControlMessage, SignalMessage, SyncMessage } from "../../shared/types.ts";
+import { IceCandidateQueue } from "../shared/peerSignals.ts";
 import { RTC_CONFIGURATION } from "../shared/webrtcConfig.ts";
 
 type SendSignal = (message: SignalMessage) => void;
@@ -8,6 +9,7 @@ type StateListener = (state: string) => void;
 
 export class ClientWebRTC {
   private pc: RTCPeerConnection | null = null;
+  private candidates: IceCandidateQueue | null = null;
   private control: RTCDataChannel | null = null;
   private sync: RTCDataChannel | null = null;
   private controlListeners = new Set<ControlListener>();
@@ -34,8 +36,8 @@ export class ClientWebRTC {
       return;
     }
 
-    if (message.type === "ice" && this.pc) {
-      await this.pc.addIceCandidate(message.candidate);
+    if (message.type === "ice" && this.candidates) {
+      await this.candidates.add(message.candidate);
     }
   }
 
@@ -47,8 +49,11 @@ export class ClientWebRTC {
 
   private async acceptOffer(message: Extract<SignalMessage, { type: "offer" }>): Promise<void> {
     this.pc?.close();
+    const hostId = message.from ?? "host";
     const pc = new RTCPeerConnection(RTC_CONFIGURATION);
+    const candidates = new IceCandidateQueue(pc, hostId);
     this.pc = pc;
+    this.candidates = candidates;
 
     pc.addEventListener("icecandidate", (event) => {
       if (event.candidate) {
@@ -79,10 +84,18 @@ export class ClientWebRTC {
       }
     });
 
-    await pc.setRemoteDescription(message.sdp);
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-    this.sendSignal({ type: "answer", to: "host", sdp: answer });
+    try {
+      await pc.setRemoteDescription(message.sdp);
+      await candidates.flush();
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      this.sendSignal({ type: "answer", to: "host", sdp: answer });
+    } catch (error) {
+      // A newer offer closed this connection, which rejects its pending operations; that is not a failure.
+      if (this.pc !== pc) return;
+      console.warn(`Could not accept the offer from ${hostId}`, error);
+      this.emitState("failed");
+    }
   }
 
   private emitState(state: string): void {

@@ -1,0 +1,5 @@
+{
+  // Bun types only: the tests and the modules they import must not need the Workers runtime.
+  "extends": "../../tsconfig.json",
+  "include": ["**/*.ts"]
+}

@@ -9,6 +9,13 @@
       "custom_domain": true
     }
   ],
+  "vars": {
+    // Comma-separated frontend origins allowed to open signaling WebSockets.
+    // localhost and private LAN origins (bun run dev) are always accepted.
+    "ALLOWED_ORIGINS": "https://metronome.tico-tico.com",
+    // Participants per room, not counting the host.
+    "MAX_PARTICIPANTS": 50
+  },
   "durable_objects": {
     "bindings": [
       {

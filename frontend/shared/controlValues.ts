@@ -1,7 +1,7 @@
 export const MIN_BPM = 30;
 export const MAX_BPM = 240;
 export const MAX_BEATS_PER_BAR = 16;
-export const MAX_OUTPUT_OFFSET_MS = 200;
+export const MAX_OUTPUT_OFFSET_MS = 500;
 
 export const BEAT_UNITS = [2, 4, 8, 16] as const;
 /** Common meters offered as one-tap presets; BPM counts the beat unit (the denominator). */

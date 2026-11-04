@@ -1,3 +1,4 @@
+import { checkOrigin, parseAllowedOrigins } from "./origins";
 import { RoomDurableObject } from "./room";
 
 export { RoomDurableObject };
@@ -13,14 +14,6 @@ function makeRoomId(): string {
   }
 
   return roomId;
-}
-
-function getFrontendOrigin(request: Request): string {
-  const origin = request.headers.get("Origin");
-  if (origin) return origin;
-
-  const url = new URL(request.url);
-  return url.origin;
 }
 
 function getWebSocketUpgrade(request: Request): string | null {
@@ -55,6 +48,18 @@ export default {
       return badRequest("Expected WebSocket upgrade.");
     }
 
+    const originHeader = request.headers.get("Origin");
+    const originCheck = checkOrigin(originHeader, parseAllowedOrigins(env.ALLOWED_ORIGINS));
+    if (!originCheck.allowed) {
+      logServerEvent("request_rejected", {
+        path: url.pathname,
+        status: 403,
+        reason: originCheck.reason,
+        origin: originHeader?.slice(0, 200) ?? null,
+      });
+      return new Response("Origin not allowed.", { status: 403 });
+    }
+
     const role = url.pathname === "/ws/host" ? "host" : url.pathname === "/ws/client" ? "client" : null;
     if (!role) {
       logServerEvent("request_rejected", { path: url.pathname, status: 400, reason: "unknown_ws_path" });
@@ -72,7 +77,7 @@ export default {
     durableObjectUrl.search = "";
     durableObjectUrl.searchParams.set("role", role);
     durableObjectUrl.searchParams.set("room", roomId);
-    durableObjectUrl.searchParams.set("frontendOrigin", getFrontendOrigin(request));
+    durableObjectUrl.searchParams.set("frontendOrigin", originCheck.origin);
 
     const roomObject = env.ROOMS.get(env.ROOMS.idFromName(roomId));
     logServerEvent("room_connect_forwarded", { role, roomId });
