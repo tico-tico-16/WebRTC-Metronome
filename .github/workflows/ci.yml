@@ -5,9 +5,13 @@ on:
     branches: [main]
   pull_request:
 
+# Superseded pull request runs are cancelled. Runs on main are never
+# cancelled: back-to-back merges or a late pull_request event resolved
+# against main would otherwise cancel the run for main's latest commit
+# and leave that commit showing as not successful.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
