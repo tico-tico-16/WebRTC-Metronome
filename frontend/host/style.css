@@ -17,6 +17,20 @@
     column-gap: 32px;
     align-items: start;
   }
+
+  /* The controls never make the page taller than the window: when the song tab or the details
+     need more room, this column scrolls on its own, so the beat display and the play button stay
+     in view. 152px is everything above and below the panel's content: the shell padding (20px and
+     32px), the header (34px), the gap (16px) and the panel's border and padding (2 × 25px). The
+     beat polygon in base.css is sized to the same height. The 5px of padding keeps focus rings
+     inside the scroll area, and the negative margin cancels it out of the layout. */
+  .player-controls {
+    max-height: calc(100svh - 152px + 10px);
+    margin: -5px;
+    padding: 5px;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+  }
 }
 
 /* Under the play button while the browser has stopped the host's audio. */
